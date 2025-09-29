@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Magazine Viewer</title>
+<style>
+  html,body{height:100%;margin:0;font-family:Arial;background:#111;color:#fff}
+  .viewer{max-width:1100px;margin:0 auto;height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
+  .canvas-wrap{width:100%;max-height:calc(100vh - 120px);background:#0b0b0b;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+  canvas{display:block;width:100%;height:auto}
+  .arrow{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.35);border-radius:40px;padding:8px;cursor:pointer}
+  .arrow.left{left:12px} .arrow.right{right:12px}
+  .controls{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px}
+  .btn{padding:8px 12px;border-radius:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.06);cursor:pointer}
+  .meta{position:absolute;left:14px;top:12px;color:#bbb}
+  .page-ind{position:absolute;right:14px;top:12px;color:#bbb}
+</style>
+</head>
+<body>
+  <div class="viewer">
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="pdfCanvas"></canvas>
+      <div class="meta">Tập san</div>
+      <div class="page-ind" id="pageIndicator">0 / 0</div>
+
+      <div class="arrow left" id="btnPrev" title="Previous">&#9664;</div>
+      <div class="arrow right" id="btnNext" title="Next">&#9654;</div>
+
+      <div class="controls">
+        <button id="btnPlayPause" class="btn">Pause</button>
+        <button id="btnFirst" class="btn">First</button>
+        <button id="btnLast" class="btn">Last</button>
+      </div>
+    </div>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.349/pdf.min.js"></script>
+<script>
+const pdfUrl = "./magazine.pdf";   // file PDF nằm cùng repo
+const autoplayInterval = 20000;    // 20 giây auto chuyển trang
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.349/pdf.worker.min.js";
+
+const canvas = document.getElementById('pdfCanvas');
+const ctx = canvas.getContext('2d');
+const pageIndicator = document.getElementById('pageIndicator');
+const btnPrev = document.getElementById('btnPrev');
+const btnNext = document.getElementById('btnNext');
+const btnPlayPause = document.getElementById('btnPlayPause');
+const btnFirst = document.getElementById('btnFirst');
+const btnLast = document.getElementById('btnLast');
+const canvasWrap = document.getElementById('canvasWrap');
+
+let pdfDoc = null, currentPage = 1, totalPages = 0, renderTask = null, autoplayTimer = null;
+let autoplayEnabled = true;
+
+async function loadPdf(){
+  const loadingTask = pdfjsLib.getDocument({ url: pdfUrl });
+  pdfDoc = await loadingTask.promise;
+  totalPages = pdfDoc.numPages;
+  pageIndicator.textContent = `${currentPage} / ${totalPages}`;
+  renderPage(currentPage);
+  startAutoplay();
+}
+
+function resizeCanvasForViewport(viewport){
+  const containerWidth = canvasWrap.clientWidth;
+  const ratio = window.devicePixelRatio || 1;
+  const desiredScale = containerWidth / viewport.width;
+  const scaledViewport = viewport.clone({ scale: desiredScale * ratio });
+  canvas.width = Math.floor(scaledViewport.width);
+  canvas.height = Math.floor(scaledViewport.height);
+  canvas.style.width = Math.floor(scaledViewport.width / ratio) + "px";
+  canvas.style.height = Math.floor(scaledViewport.height / ratio) + "px";
+  return desiredScale;
+}
+
+async function renderPage(pageNum){
+  if (renderTask) { try { renderTask.cancel(); } catch(e){} renderTask = null; }
+  const page = await pdfDoc.getPage(pageNum);
+  const unscaled = page.getViewport({ scale: 1 });
+  const scale = resizeCanvasForViewport(unscaled);
+  const viewport = page.getViewport({ scale: scale * (window.devicePixelRatio || 1) });
+  renderTask = page.render({ canvasContext: ctx, viewport, intent: "display" });
+  await renderTask.promise;
+  pageIndicator.textContent = `${currentPage} / ${totalPages}`;
+}
+
+function gotoPage(n){ if(n<1) n=1; if(n>totalPages) n=totalPages; currentPage=n; renderPage(currentPage); }
+function nextPage(){ gotoPage(currentPage===totalPages?1:currentPage+1); }
+function prevPage(){ gotoPage(currentPage===1?totalPages:currentPage-1); }
+
+function startAutoplay(){ stopAutoplay(); if(!autoplayEnabled) return; autoplayTimer = setInterval(()=> nextPage(), autoplayInterval); }
+function stopAutoplay(){ if(autoplayTimer){ clearInterval(autoplayTimer); autoplayTimer=null; } }
+
+btnNext.addEventListener('click', ()=>{ nextPage(); pauseTemporarily(); });
+btnPrev.addEventListener('click', ()=>{ prevPage(); pauseTemporarily(); });
+btnPlayPause.addEventListener('click', ()=>{ autoplayEnabled=!autoplayEnabled; btnPlayPause.textContent = autoplayEnabled ? 'Pause' : 'Play'; if(autoplayEnabled) startAutoplay(); else stopAutoplay(); });
+btnFirst.addEventListener('click', ()=>{ gotoPage(1); pauseTemporarily(); });
+btnLast.addEventListener('click', ()=>{ gotoPage(totalPages); pauseTemporarily(); });
+
+let resumeTimeout = null;
+function pauseTemporarily(){
+  if(autoplayEnabled){ stopAutoplay(); if(resumeTimeout) clearTimeout(resumeTimeout); resumeTimeout = setTimeout(()=> { if(autoplayEnabled) startAutoplay(); }, 10000); }
+}
+
+window.addEventListener('resize', ()=> { setTimeout(()=> renderPage(currentPage), 200); });
+
+let touchStartX = 0;
+canvasWrap.addEventListener('touchstart', (e)=> { if(e.touches && e.touches.length===1){ touchStartX = e.touches[0].clientX; } pauseTemporarily(); }, {passive:true});
+canvasWrap.addEventListener('touchend', (e)=> { if(!e.changedTouches) return; let dx = e.changedTouches[0].clientX - touchStartX; if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); } }, {passive:true});
+
+loadPdf();
+</script>
+</body>
+</html>
