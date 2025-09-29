@@ -3,140 +3,183 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Tập san Flipbook</title>
-
+<title>Tập san Viewer</title>
 <style>
-  html, body {
-    margin: 0; padding: 0;
-    height: 100%; width: 100%;
-    background: #111;
-    overflow: hidden;
-  }
+  html,body{height:100%;margin:0;font-family:Arial;background:#111;color:#fff;overflow:hidden}
+  .viewer{width:100%;height:100%;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
+  .canvas-wrap{width:100%;height:100%;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+  canvas{display:block;background:#000;margin:0 4px;border-radius:4px}
+  .arrow{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.4);border-radius:40px;padding:12px;cursor:pointer;z-index:10}
+  .arrow.left{left:20px} .arrow.right{right:20px}
+  .page-ind{position:absolute;top:10px;right:20px;color:#bbb;font-size:14px}
+  .controls{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px}
+  .btn{padding:6px 12px;border-radius:6px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);cursor:pointer;color:#fff}
 
-  #flipbook {
-    width: 100%; height: 100%;
-  }
-
-  #flipbook .page {
-    width: 100%; height: 100%;
-    background: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-  }
-
-  #flipbook img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain; /* đảm bảo không bị cắt ngang */
-  }
-
-  /* Nút điều khiển trên PC */
-  .controls {
-    position: absolute;
-    bottom: 12px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 8px;
-    z-index: 100;
-  }
-  .btn {
-    padding: 6px 12px;
-    border-radius: 6px;
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.3);
-    cursor: pointer;
-    color: #fff;
-  }
-
-  /* Ẩn controls trên mobile */
+  /* Ẩn nút điều khiển và mũi tên trên mobile */
   @media (max-width: 767px) {
-    .controls {
-      display: none !important;
-    }
+    .controls, .arrow { display:none !important; }
   }
 </style>
-
-<!-- jQuery + Turn.js -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/blasten/turn.js/turn.min.js"></script>
-
-<!-- PDF.js -->
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 </head>
 <body>
+  <div class="viewer">
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="pdfCanvasLeft"></canvas>
+      <canvas id="pdfCanvasRight" style="display:none"></canvas>
+      <div class="page-ind" id="pageIndicator">0 / 0</div>
+      <div class="arrow left" id="btnPrev">&#9664;</div>
+      <div class="arrow right" id="btnNext">&#9654;</div>
+      <div class="controls">
+        <button id="btnPlayPause" class="btn">Pause</button>
+        <button id="btnFirst" class="btn">First</button>
+        <button id="btnLast" class="btn">Last</button>
+      </div>
+    </div>
+  </div>
 
-<div id="flipbook"></div>
-
-<!-- Controls chỉ hiện trên PC -->
-<div class="controls">
-  <button id="btnPrev" class="btn">Prev</button>
-  <button id="btnNext" class="btn">Next</button>
-  <button id="btnFirst" class="btn">First</button>
-  <button id="btnLast" class="btn">Last</button>
-</div>
-
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script>
-const pdfUrl = "./tapsan-29-9-25.pdf"; 
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc =
- "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+const pdfUrl = "./tapsan-29-9-25.pdf";   // File PDF trong repo
+const autoplayInterval = 20000;
 
-async function loadPdfAsImages() {
-  const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
-  const totalPages = pdf.numPages;
+const canvasLeft = document.getElementById('pdfCanvasLeft');
+const ctxLeft = canvasLeft.getContext('2d');
+const canvasRight = document.getElementById('pdfCanvasRight');
+const ctxRight = canvasRight.getContext('2d');
+const pageIndicator = document.getElementById('pageIndicator');
+const btnPrev = document.getElementById('btnPrev');
+const btnNext = document.getElementById('btnNext');
+const btnPlayPause = document.getElementById('btnPlayPause');
+const btnFirst = document.getElementById('btnFirst');
+const btnLast = document.getElementById('btnLast');
+const canvasWrap = document.getElementById('canvasWrap');
 
-  const flipbook = $("#flipbook");
+let pdfDoc = null, currentPage = 1, totalPages = 0;
+let autoplayTimer = null, autoplayEnabled = true;
+let twoPageMode = window.innerWidth >= 768; // PC hiển thị 2 trang, mobile chỉ 1 trang
 
-  for (let i = 1; i <= totalPages; i++) {
-    const page = await pdf.getPage(i);
-    const viewport = page.getViewport({ scale: 2 });
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
+async function loadPdf(){
+  const loadingTask = pdfjsLib.getDocument({ url: pdfUrl });
+  pdfDoc = await loadingTask.promise;
+  totalPages = pdfDoc.numPages;
+  updateIndicator();
+  renderCurrent();
+  startAutoplay();
+}
 
-    await page.render({ canvasContext: ctx, viewport }).promise;
-
-    const img = document.createElement("img");
-    img.src = canvas.toDataURL("image/jpeg", 0.9);
-
-    const pageDiv = document.createElement("div");
-    pageDiv.className = "page";
-    pageDiv.appendChild(img);
-
-    flipbook.append(pageDiv);
+// PC fit theo chiều cao, Mobile fit theo chiều rộng
+function resizeCanvas(canvas, viewport){
+  const ratio = window.devicePixelRatio || 1;
+  let scale;
+  if(twoPageMode){
+    // PC: fit chiều cao
+    scale = (canvasWrap.clientHeight) / viewport.height;
+  } else {
+    // Mobile: fit chiều rộng
+    scale = (canvasWrap.clientWidth) / viewport.width;
   }
-
-  initFlipbook(totalPages);
+  const scaled = viewport.clone({ scale: scale * ratio });
+  canvas.width = scaled.width;
+  canvas.height = scaled.height;
+  canvas.style.width = (scaled.width/ratio)+"px";
+  canvas.style.height = (scaled.height/ratio)+"px";
+  return scale;
 }
 
-function initFlipbook(totalPages) {
-  $("#flipbook").turn({
-    width: window.innerWidth,
-    height: window.innerHeight,
-    autoCenter: true,
-    display: window.innerWidth >= 768 ? "double" : "single", // PC = 2 trang, Mobile = 1 trang
-    gradients: true,
-    acceleration: true
-  });
-
-  // Resize khi xoay màn hình
-  window.addEventListener("resize", () => {
-    $("#flipbook").turn("size", window.innerWidth, window.innerHeight);
-    $("#flipbook").turn("display", window.innerWidth >= 768 ? "double" : "single");
-  });
-
-  // Controls cho PC
-  document.getElementById("btnPrev").onclick = () => $("#flipbook").turn("previous");
-  document.getElementById("btnNext").onclick = () => $("#flipbook").turn("next");
-  document.getElementById("btnFirst").onclick = () => $("#flipbook").turn("page", 1);
-  document.getElementById("btnLast").onclick = () => $("#flipbook").turn("page", totalPages);
+async function renderPage(pageNum, canvas, ctx){
+  if(pageNum < 1 || pageNum > totalPages){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    return;
+  }
+  const page = await pdfDoc.getPage(pageNum);
+  const unscaled = page.getViewport({ scale: 1 });
+  const scale = resizeCanvas(canvas, unscaled);
+  const viewport = page.getViewport({ scale: scale * (window.devicePixelRatio||1) });
+  await page.render({canvasContext: ctx, viewport}).promise;
 }
 
-loadPdfAsImages();
+async function renderCurrent(){
+  if(twoPageMode){
+    canvasRight.style.display = "block";
+    await renderPage(currentPage, canvasLeft, ctxLeft);
+    await renderPage(currentPage+1, canvasRight, ctxRight);
+  } else {
+    canvasRight.style.display = "none";
+    await renderPage(currentPage, canvasLeft, ctxLeft);
+  }
+  updateIndicator();
+}
+
+function updateIndicator(){
+  pageIndicator.textContent = `${currentPage} / ${totalPages}`;
+}
+
+function gotoPage(n){ 
+  if(n<1) n=1; 
+  if(n>totalPages) n=totalPages; 
+  currentPage=n; 
+  renderCurrent(); 
+}
+function nextPage(){ 
+  currentPage += (twoPageMode?2:1); 
+  if(currentPage>totalPages) currentPage=1; 
+  renderCurrent(); 
+}
+function prevPage(){ 
+  currentPage -= (twoPageMode?2:1); 
+  if(currentPage<1) currentPage = (twoPageMode? (totalPages%2==0?totalPages-1:totalPages) : totalPages); 
+  renderCurrent(); 
+}
+
+function startAutoplay(){ 
+  stopAutoplay(); 
+  if(!autoplayEnabled) return; 
+  autoplayTimer = setInterval(()=> nextPage(), autoplayInterval); 
+}
+function stopAutoplay(){ 
+  if(autoplayTimer){ clearInterval(autoplayTimer); autoplayTimer=null; } 
+}
+
+// Buttons (chỉ PC, mobile ẩn bằng CSS)
+btnNext.addEventListener('click', ()=>{ nextPage(); pauseTemporarily(); });
+btnPrev.addEventListener('click', ()=>{ prevPage(); pauseTemporarily(); });
+btnPlayPause.addEventListener('click', ()=>{
+  autoplayEnabled=!autoplayEnabled; 
+  btnPlayPause.textContent = autoplayEnabled ? 'Pause':'Play'; 
+  if(autoplayEnabled) startAutoplay(); else stopAutoplay(); 
+});
+btnFirst.addEventListener('click', ()=>{ gotoPage(1); pauseTemporarily(); });
+btnLast.addEventListener('click', ()=>{ gotoPage(totalPages); pauseTemporarily(); });
+
+let resumeTimeout=null;
+function pauseTemporarily(){
+  if(autoplayEnabled){ 
+    stopAutoplay(); 
+    if(resumeTimeout) clearTimeout(resumeTimeout); 
+    resumeTimeout=setTimeout(()=>{if(autoplayEnabled) startAutoplay();},10000); 
+  }
+}
+
+window.addEventListener('resize', ()=> { 
+  twoPageMode = window.innerWidth>=768; 
+  renderCurrent(); 
+});
+
+// Vuốt trên mobile
+let touchStartX=0;
+canvasWrap.addEventListener('touchstart', e=>{
+  if(e.touches.length===1) touchStartX=e.touches[0].clientX; 
+  pauseTemporarily(); 
+}, {passive:true});
+canvasWrap.addEventListener('touchend', e=>{
+  if(!e.changedTouches) return; 
+  let dx=e.changedTouches[0].clientX-touchStartX; 
+  if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); } 
+}, {passive:true});
+
+loadPdf();
 </script>
 </body>
 </html>
