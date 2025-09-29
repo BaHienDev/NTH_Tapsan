@@ -32,12 +32,13 @@
     </div>
   </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.349/pdf.min.js"></script>
+<!-- pdf.js -->
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script>
-const pdfUrl = "./tapsan-29-9-25.pdf";   // Đặt lại đúng tên file
-const autoplayInterval = 20000;
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.349/pdf.worker.min.js";
+const pdfUrl = "./tapsan-29-9-25.pdf";   // File PDF trong repo
+const autoplayInterval = 20000;
 
 const canvasLeft = document.getElementById('pdfCanvasLeft');
 const ctxLeft = canvasLeft.getContext('2d');
@@ -51,7 +52,7 @@ const btnFirst = document.getElementById('btnFirst');
 const btnLast = document.getElementById('btnLast');
 const canvasWrap = document.getElementById('canvasWrap');
 
-let pdfDoc = null, currentPage = 1, totalPages = 0, renderTask = null;
+let pdfDoc = null, currentPage = 1, totalPages = 0;
 let autoplayTimer = null, autoplayEnabled = true;
 let twoPageMode = window.innerWidth >= 768; // PC hiển thị 2 trang
 
@@ -66,7 +67,7 @@ async function loadPdf(){
 
 function resizeCanvas(canvas, viewport){
   const ratio = window.devicePixelRatio || 1;
-  const scale = (canvasWrap.clientWidth/ (twoPageMode?2:1)) / viewport.width;
+  const scale = (canvasWrap.clientWidth / (twoPageMode?2:1)) / viewport.width;
   const scaled = viewport.clone({ scale: scale * ratio });
   canvas.width = scaled.width;
   canvas.height = scaled.height;
@@ -76,7 +77,10 @@ function resizeCanvas(canvas, viewport){
 }
 
 async function renderPage(pageNum, canvas, ctx){
-  if(pageNum < 1 || pageNum > totalPages){ ctx.clearRect(0,0,canvas.width,canvas.height); return; }
+  if(pageNum < 1 || pageNum > totalPages){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    return;
+  }
   const page = await pdfDoc.getPage(pageNum);
   const unscaled = page.getViewport({ scale: 1 });
   const scale = resizeCanvas(canvas, unscaled);
@@ -100,29 +104,66 @@ function updateIndicator(){
   pageIndicator.textContent = `${currentPage} / ${totalPages}`;
 }
 
-function gotoPage(n){ if(n<1) n=1; if(n>totalPages) n=totalPages; currentPage=n; renderCurrent(); }
-function nextPage(){ currentPage += (twoPageMode?2:1); if(currentPage>totalPages) currentPage=1; renderCurrent(); }
-function prevPage(){ currentPage -= (twoPageMode?2:1); if(currentPage<1) currentPage = (twoPageMode? (totalPages%2==0?totalPages-1:totalPages) : totalPages); renderCurrent(); }
+function gotoPage(n){ 
+  if(n<1) n=1; 
+  if(n>totalPages) n=totalPages; 
+  currentPage=n; 
+  renderCurrent(); 
+}
+function nextPage(){ 
+  currentPage += (twoPageMode?2:1); 
+  if(currentPage>totalPages) currentPage=1; 
+  renderCurrent(); 
+}
+function prevPage(){ 
+  currentPage -= (twoPageMode?2:1); 
+  if(currentPage<1) currentPage = (twoPageMode? (totalPages%2==0?totalPages-1:totalPages) : totalPages); 
+  renderCurrent(); 
+}
 
-function startAutoplay(){ stopAutoplay(); if(!autoplayEnabled) return; autoplayTimer = setInterval(()=> nextPage(), autoplayInterval); }
-function stopAutoplay(){ if(autoplayTimer){ clearInterval(autoplayTimer); autoplayTimer=null; } }
+function startAutoplay(){ 
+  stopAutoplay(); 
+  if(!autoplayEnabled) return; 
+  autoplayTimer = setInterval(()=> nextPage(), autoplayInterval); 
+}
+function stopAutoplay(){ 
+  if(autoplayTimer){ clearInterval(autoplayTimer); autoplayTimer=null; } 
+}
 
 btnNext.addEventListener('click', ()=>{ nextPage(); pauseTemporarily(); });
 btnPrev.addEventListener('click', ()=>{ prevPage(); pauseTemporarily(); });
-btnPlayPause.addEventListener('click', ()=>{ autoplayEnabled=!autoplayEnabled; btnPlayPause.textContent = autoplayEnabled ? 'Pause':'Play'; if(autoplayEnabled) startAutoplay(); else stopAutoplay(); });
+btnPlayPause.addEventListener('click', ()=>{
+  autoplayEnabled=!autoplayEnabled; 
+  btnPlayPause.textContent = autoplayEnabled ? 'Pause':'Play'; 
+  if(autoplayEnabled) startAutoplay(); else stopAutoplay(); 
+});
 btnFirst.addEventListener('click', ()=>{ gotoPage(1); pauseTemporarily(); });
 btnLast.addEventListener('click', ()=>{ gotoPage(totalPages); pauseTemporarily(); });
 
 let resumeTimeout=null;
 function pauseTemporarily(){
-  if(autoplayEnabled){ stopAutoplay(); if(resumeTimeout) clearTimeout(resumeTimeout); resumeTimeout=setTimeout(()=>{if(autoplayEnabled) startAutoplay();},10000); }
+  if(autoplayEnabled){ 
+    stopAutoplay(); 
+    if(resumeTimeout) clearTimeout(resumeTimeout); 
+    resumeTimeout=setTimeout(()=>{if(autoplayEnabled) startAutoplay();},10000); 
+  }
 }
 
-window.addEventListener('resize', ()=> { twoPageMode = window.innerWidth>=768; renderCurrent(); });
+window.addEventListener('resize', ()=> { 
+  twoPageMode = window.innerWidth>=768; 
+  renderCurrent(); 
+});
 
 let touchStartX=0;
-canvasWrap.addEventListener('touchstart', e=>{ if(e.touches.length===1) touchStartX=e.touches[0].clientX; pauseTemporarily(); }, {passive:true});
-canvasWrap.addEventListener('touchend', e=>{ if(!e.changedTouches) return; let dx=e.changedTouches[0].clientX-touchStartX; if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); } }, {passive:true});
+canvasWrap.addEventListener('touchstart', e=>{
+  if(e.touches.length===1) touchStartX=e.touches[0].clientX; 
+  pauseTemporarily(); 
+}, {passive:true});
+canvasWrap.addEventListener('touchend', e=>{
+  if(!e.changedTouches) return; 
+  let dx=e.changedTouches[0].clientX-touchStartX; 
+  if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); } 
+}, {passive:true});
 
 loadPdf();
 </script>
