@@ -52,29 +52,16 @@
     animation: spin 1s linear infinite;
     margin-bottom:20px;
   }
-  @keyframes spin {
-    0% { transform:rotate(0deg); }
-    100% { transform:rotate(360deg); }
-  }
-  .loading-text {
-    font-size:18px;
-  }
-  .loading-text::after {
-    content:"";
-    animation: dots 1.5s infinite;
-  }
-  @keyframes dots {
-    0% { content:""; }
-    33% { content:"."; }
-    66% { content:".."; }
-    100% { content:"..."; }
-  }
+  @keyframes spin { 0%{transform:rotate(0)}100%{transform:rotate(360deg)} }
+  .loading-text { font-size:18px; }
+  .loading-text::after { content:""; animation: dots 1.5s infinite; }
+  @keyframes dots { 0%{content:""} 33%{content:"."} 66%{content:".."} 100%{content:"..."} }
 </style>
 </head>
 <body>
   <!-- Loading Screen -->
   <div id="loading">
-    <img id="loading-logo" src="logo.png" alt="Logo"> <!-- đổi logo.png bằng logo của bạn -->
+    <img id="loading-logo" src="logo.png" alt="Logo"> <!-- đổi logo.png -->
     <div class="spinner"></div>
     <div class="loading-text">Đang tải dữ liệu</div>
   </div>
@@ -125,8 +112,8 @@ async function loadPdf(){
   pdfDoc = await loadingTask.promise;
   totalPages = pdfDoc.numPages;
   updateIndicator();
-  await renderCurrent(); // render xong trang đầu
-  // Ẩn loading với fade-out
+  await renderCurrent(); // chờ render trang đầu hoàn tất
+  // Ẩn loading sau khi render xong
   loading.classList.add("fade-out");
   setTimeout(()=>{ loading.style.display="none"; viewer.style.display="flex"; }, 600);
   startAutoplay();
@@ -137,11 +124,9 @@ function resizeCanvas(canvas, viewport){
   const ratio = window.devicePixelRatio || 1;
   let scale;
   if(twoPageMode){
-    // PC: fit chiều cao
-    scale = (canvasWrap.clientHeight) / viewport.height;
+    scale = (canvasWrap.clientHeight) / viewport.height; // PC: fit chiều cao
   } else {
-    // Mobile: fit chiều rộng
-    scale = (canvasWrap.clientWidth) / viewport.width;
+    scale = (canvasWrap.clientWidth) / viewport.width; // Mobile: fit chiều rộng
   }
   const scaled = viewport.clone({ scale: scale * ratio });
   canvas.width = scaled.width;
@@ -160,7 +145,7 @@ async function renderPage(pageNum, canvas, ctx){
   const unscaled = page.getViewport({ scale: 1 });
   const scale = resizeCanvas(canvas, unscaled);
   const viewport = page.getViewport({ scale: scale * (window.devicePixelRatio||1) });
-  await page.render({canvasContext: ctx, viewport}).promise;
+  return page.render({canvasContext: ctx, viewport}).promise; // ⬅ return promise
 }
 
 async function renderCurrent(){
@@ -175,72 +160,30 @@ async function renderCurrent(){
   updateIndicator();
 }
 
-function updateIndicator(){
-  pageIndicator.textContent = `${currentPage} / ${totalPages}`;
-}
+function updateIndicator(){ pageIndicator.textContent = `${currentPage} / ${totalPages}`; }
 
-function gotoPage(n){ 
-  if(n<1) n=1; 
-  if(n>totalPages) n=totalPages; 
-  currentPage=n; 
-  renderCurrent(); 
-}
-function nextPage(){ 
-  currentPage += (twoPageMode?2:1); 
-  if(currentPage>totalPages) currentPage=1; 
-  renderCurrent(); 
-}
-function prevPage(){ 
-  currentPage -= (twoPageMode?2:1); 
-  if(currentPage<1) currentPage = (twoPageMode? (totalPages%2==0?totalPages-1:totalPages) : totalPages); 
-  renderCurrent(); 
-}
+function gotoPage(n){ if(n<1) n=1; if(n>totalPages) n=totalPages; currentPage=n; renderCurrent(); }
+function nextPage(){ currentPage += (twoPageMode?2:1); if(currentPage>totalPages) currentPage=1; renderCurrent(); }
+function prevPage(){ currentPage -= (twoPageMode?2:1); if(currentPage<1) currentPage = (twoPageMode? (totalPages%2==0?totalPages-1:totalPages) : totalPages); renderCurrent(); }
 
-function startAutoplay(){ 
-  stopAutoplay(); 
-  if(!autoplayEnabled) return; 
-  autoplayTimer = setInterval(()=> nextPage(), autoplayInterval); 
-}
-function stopAutoplay(){ 
-  if(autoplayTimer){ clearInterval(autoplayTimer); autoplayTimer=null; } 
-}
+function startAutoplay(){ stopAutoplay(); if(!autoplayEnabled) return; autoplayTimer = setInterval(()=> nextPage(), autoplayInterval); }
+function stopAutoplay(){ if(autoplayTimer){ clearInterval(autoplayTimer); autoplayTimer=null; } }
 
-// Buttons (chỉ PC, mobile ẩn bằng CSS)
 btnNext.addEventListener('click', ()=>{ nextPage(); pauseTemporarily(); });
 btnPrev.addEventListener('click', ()=>{ prevPage(); pauseTemporarily(); });
-btnPlayPause.addEventListener('click', ()=>{
-  autoplayEnabled=!autoplayEnabled; 
-  btnPlayPause.textContent = autoplayEnabled ? 'Pause':'Play'; 
-  if(autoplayEnabled) startAutoplay(); else stopAutoplay(); 
-});
+btnPlayPause.addEventListener('click', ()=>{ autoplayEnabled=!autoplayEnabled; btnPlayPause.textContent = autoplayEnabled ? 'Pause':'Play'; if(autoplayEnabled) startAutoplay(); else stopAutoplay(); });
 btnFirst.addEventListener('click', ()=>{ gotoPage(1); pauseTemporarily(); });
 btnLast.addEventListener('click', ()=>{ gotoPage(totalPages); pauseTemporarily(); });
 
 let resumeTimeout=null;
-function pauseTemporarily(){
-  if(autoplayEnabled){ 
-    stopAutoplay(); 
-    if(resumeTimeout) clearTimeout(resumeTimeout); 
-    resumeTimeout=setTimeout(()=>{if(autoplayEnabled) startAutoplay();},10000); 
-  }
-}
+function pauseTemporarily(){ if(autoplayEnabled){ stopAutoplay(); if(resumeTimeout) clearTimeout(resumeTimeout); resumeTimeout=setTimeout(()=>{if(autoplayEnabled) startAutoplay();},10000); } }
 
-window.addEventListener('resize', ()=> { 
-  twoPageMode = window.innerWidth>=768; 
-  renderCurrent(); 
-});
+window.addEventListener('resize', ()=> { twoPageMode = window.innerWidth>=768; renderCurrent(); });
 
 // Vuốt trên mobile
 let touchStartX=0;
-canvasWrap.addEventListener('touchstart', e=>{
-  if(e.touches.length===1) touchStartX=e.touches[0].clientX; 
-  pauseTemporarily(); 
-}, {passive:true});
-canvasWrap.addEventListener('touchend', e=>{
-  if(!e.changedTouches) return; 
-  let dx=e.changedTouches[0].clientX-touchStartX; 
-  if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); } 
-}, {passive:true});
+canvasWrap.addEventListener('touchstart', e=>{ if(e.touches.length===1) touchStartX=e.touches[0].clientX; pauseTemporarily(); }, {passive:true});
+canvasWrap.addEventListener('touchend', e=>{ if(!e.changedTouches) return; let dx=e.changedTouches[0].clientX-touchStartX; if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); } }, {passive:true});
 
 loadPdf();
 </script>
