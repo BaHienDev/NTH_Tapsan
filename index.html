@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>TẬP SAN 20 NĂM - THPT NGUYỄN THƯỢNG HIỀN</title>
+<title>TẬP SAN KỈ NIỆM 20 NĂM THÀNH LẬP TRƯỜNG THPT NGUYỄN THƯỢNG HIỀN</title>
 <style>
   html,body{height:100%;margin:0;font-family:Arial;background:#111;color:#fff;overflow:hidden}
   .viewer{width:100%;height:100%;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
@@ -16,10 +16,12 @@
   .controls{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px}
   .btn{padding:6px 12px;border-radius:6px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);cursor:pointer;color:#fff}
 
+  /* Ẩn nút điều khiển và mũi tên trên mobile */
   @media (max-width: 767px) {
     .controls, .arrow { display:none !important; }
   }
 
+  /* Loading overlay */
   #loadingOverlay {
     position:fixed;top:0;left:0;width:100%;height:100%;
     background:#111;display:flex;flex-direction:column;
@@ -34,11 +36,19 @@
   }
   @keyframes spin{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
   .loading-text{font-size:18px;color:#ccc}
-  .loading-dots::after { content:"";animation: dots 1.5s steps(3,end) infinite; }
-  @keyframes dots { 0%{content:"";}33%{content:".";}66%{content:"..";}100%{content:"...";} }
+  .loading-dots::after {
+    content:"";animation: dots 1.5s steps(3,end) infinite;
+  }
+  @keyframes dots {
+    0%{content:"";}
+    33%{content:".";}
+    66%{content:"..";}
+    100%{content:"...";}
+  }
 </style>
 </head>
 <body>
+  <!-- Loading -->
   <div id="loadingOverlay">
     <img src="logo.png" alt="Logo">
     <div class="loader"></div>
@@ -64,10 +74,12 @@
 
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc =
+pdfjsLib.GlobalWorkerOptions.workerSrc = 
   "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 
-const pdfParts = Array.from({length:20}, (_,i)=>`tapsan${i+1}.pdf`);
+// Danh sách file PDF (chia nhỏ)
+const pdfParts = Array.from({length:20}, (_,i)=>`./tapsan${i+1}.pdf`);
+const autoplayInterval = 60000;
 
 const canvasLeft = document.getElementById('pdfCanvasLeft');
 const ctxLeft = canvasLeft.getContext('2d');
@@ -83,126 +95,128 @@ const canvasWrap = document.getElementById('canvasWrap');
 const spread = document.getElementById('spread');
 const loadingOverlay = document.getElementById('loadingOverlay');
 
-let loadedParts = new Array(pdfParts.length).fill(null);
-let partPageCounts = new Array(pdfParts.length).fill(0);
-let totalPagesAll = 0;
+let docs = []; 
+let totalPages = 0;
+let partPages = [];
 let currentPage = 1;
+
+let autoplayTimer = null, autoplayEnabled = true;
 let twoPageMode = window.innerWidth >= 768;
-let autoplayTimer=null, autoplayEnabled=true;
 
-// ----------- Load nhanh part1, render luôn -----------
-async function loadInitial(){
-  const doc = await pdfjsLib.getDocument({ url: pdfParts[0] }).promise;
-  loadedParts[0] = doc;
-  partPageCounts[0] = doc.numPages;
-  totalPagesAll = partPageCounts[0];
-  // render trang đầu tiên ngay
-  await renderCurrent();
-  updateIndicator();
-  // ẩn loading ngay khi có trang đầu
-  setTimeout(()=> loadingOverlay.classList.add("fade-out"), 300);
-  // load ngầm các phần còn lại
-  preloadRemainingParts();
-}
-
-async function preloadRemainingParts(){
-  for(let i=1;i<pdfParts.length;i++){
-    const doc = await pdfjsLib.getDocument({ url: pdfParts[i] }).promise;
-    loadedParts[i] = doc;
-    partPageCounts[i] = doc.numPages;
-    totalPagesAll = partPageCounts.reduce((a,b)=>a+b,0);
-    updateIndicator();
-  }
-}
-
-// ----------- Helper tìm part + trang -----------
-function findPartForPage(globalPage){
-  let sum=0;
-  for(let i=0;i<partPageCounts.length;i++){
-    const start=sum+1,end=sum+partPageCounts[i];
-    if(globalPage>=start && globalPage<=end){
-      return {partIndex:i,localPage:globalPage-sum};
+async function loadAllPdfs(){
+  for (let i=0;i<pdfParts.length;i++){
+    const loadingTask = pdfjsLib.getDocument({url:pdfParts[i]});
+    const pdf = await loadingTask.promise;
+    docs.push(pdf);
+    partPages.push(pdf.numPages);
+    totalPages += pdf.numPages;
+    if(i===0){
+      await renderCurrent(); 
+      updateIndicator();
+      setTimeout(()=> loadingOverlay.classList.add("fade-out"), 300);
     }
-    sum+=partPageCounts[i];
+  }
+  startAutoplay();
+}
+
+function findPartAndPage(globalPage){
+  let sum=0;
+  for(let i=0;i<partPages.length;i++){
+    if(globalPage <= sum + partPages[i]){
+      return {part:i, page:globalPage-sum};
+    }
+    sum += partPages[i];
   }
   return null;
 }
 
-// ----------- Render -----------
-function resizeCanvas(canvas,viewport){
-  const ratio=window.devicePixelRatio||1;
+// scale PC fit height, Mobile fit width
+function resizeCanvas(canvas, viewport){
+  const ratio = window.devicePixelRatio || 1;
   let scale;
-  if(twoPageMode){ scale=(canvasWrap.clientHeight)/viewport.height; }
-  else { scale=(canvasWrap.clientWidth)/viewport.width; }
-  const scaled=viewport.clone({scale:scale*ratio});
-  canvas.width=scaled.width; canvas.height=scaled.height;
-  canvas.style.width=(scaled.width/ratio)+"px";
-  canvas.style.height=(scaled.height/ratio)+"px";
+  if(twoPageMode){ scale = (canvasWrap.clientHeight) / viewport.height; }
+  else { scale = (canvasWrap.clientWidth) / viewport.width; }
+  const scaled = viewport.clone({ scale: scale * ratio });
+  canvas.width = scaled.width;
+  canvas.height = scaled.height;
+  canvas.style.width = (scaled.width/ratio)+"px";
+  canvas.style.height = (scaled.height/ratio)+"px";
   return scale;
 }
 
-async function renderPage(globalPage,canvas,ctx){
-  const info=findPartForPage(globalPage);
-  if(!info||!loadedParts[info.partIndex]){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    return;
-  }
-  const page=await loadedParts[info.partIndex].getPage(info.localPage);
-  const unscaled=page.getViewport({scale:1});
-  const scale=resizeCanvas(canvas,unscaled);
-  const viewport=page.getViewport({scale:scale*(window.devicePixelRatio||1)});
-  await page.render({canvasContext:ctx,viewport}).promise;
+async function renderPage(globalPage, canvas, ctx){
+  const pos = findPartAndPage(globalPage);
+  if(!pos) return;
+  const pdf = docs[pos.part];
+  const page = await pdf.getPage(pos.page);
+  const unscaled = page.getViewport({scale:1});
+  const scale = resizeCanvas(canvas, unscaled);
+  const viewport = page.getViewport({scale: scale * (window.devicePixelRatio||1)});
+  await page.render({canvasContext: ctx, viewport}).promise;
 }
 
 async function renderCurrent(){
   if(twoPageMode){
     canvasRight.style.display="block";
-    await renderPage(currentPage,canvasLeft,ctxLeft);
-    await renderPage(currentPage+1,canvasRight,ctxRight);
+    await renderPage(currentPage, canvasLeft, ctxLeft);
+    if(currentPage+1<=totalPages) await renderPage(currentPage+1, canvasRight, ctxRight);
+    else ctxRight.clearRect(0,0,canvasRight.width,canvasRight.height);
   } else {
     canvasRight.style.display="none";
-    await renderPage(currentPage,canvasLeft,ctxLeft);
+    await renderPage(currentPage, canvasLeft, ctxLeft);
   }
   updateIndicator();
 }
 
-function updateIndicator(){ pageIndicator.textContent=`${currentPage} / ${totalPagesAll}`; }
+function updateIndicator(){ pageIndicator.textContent=`${currentPage} / ${totalPages}`; }
+function gotoPage(n){ if(n<1)n=1;if(n>totalPages)n=totalPages;currentPage=n;renderCurrent();}
+function nextPage(){ currentPage += (twoPageMode?2:1); if(currentPage>totalPages) currentPage=1; renderCurrent();}
+function prevPage(){ currentPage -= (twoPageMode?2:1); if(currentPage<1) currentPage = (twoPageMode?(totalPages%2==0?totalPages-1:totalPages):totalPages); renderCurrent(); }
 
-// ----------- Navigation -----------
-function gotoPage(n){ if(n<1)n=1;if(n>totalPagesAll)n=totalPagesAll;currentPage=n;renderCurrent();}
-function nextPage(){ currentPage+=(twoPageMode?2:1); if(currentPage>totalPagesAll) currentPage=1; renderCurrent();}
-function prevPage(){ currentPage-=(twoPageMode?2:1); if(currentPage<1) currentPage=(twoPageMode?(totalPagesAll%2==0?totalPagesAll-1:totalPagesAll):totalPagesAll); renderCurrent();}
-
-// ----------- Autoplay -----------
-function startAutoplay(){ stopAutoplay(); if(!autoplayEnabled)return; autoplayTimer=setInterval(()=>nextPage(),60000); }
+function startAutoplay(){ stopAutoplay(); if(!autoplayEnabled)return; autoplayTimer=setInterval(()=>nextPage(),autoplayInterval);}
 function stopAutoplay(){ if(autoplayTimer){clearInterval(autoplayTimer);autoplayTimer=null;} }
 
-// ----------- Zoom / Pan -----------
-let zoomLevel=1,panX=0,panY=0,isDragging=false,lastX=0,lastY=0;
-function applyTransform(){ spread.style.transform=`translate(${panX}px,${panY}px) scale(${zoomLevel})`; }
-function resetZoom(){ zoomLevel=1; panX=0; panY=0; applyTransform(); }
+btnNext.addEventListener('click', ()=>{ nextPage(); pauseTemporarily(); });
+btnPrev.addEventListener('click', ()=>{ prevPage(); pauseTemporarily(); });
+btnPlayPause.addEventListener('click', ()=>{ autoplayEnabled=!autoplayEnabled; btnPlayPause.textContent=autoplayEnabled?'Pause':'Play'; if(autoplayEnabled) startAutoplay(); else stopAutoplay(); });
+btnFirst.addEventListener('click', ()=>{ gotoPage(1); pauseTemporarily(); });
+btnLast.addEventListener('click', ()=>{ gotoPage(totalPages); pauseTemporarily(); });
 
-canvasWrap.addEventListener('wheel',e=>{
-  if(e.ctrlKey||!twoPageMode){
+let resumeTimeout=null;
+function pauseTemporarily(){ if(autoplayEnabled){ stopAutoplay(); if(resumeTimeout) clearTimeout(resumeTimeout); resumeTimeout=setTimeout(()=>{if(autoplayEnabled) startAutoplay();},10000);} }
+
+window.addEventListener('resize', ()=>{ twoPageMode=window.innerWidth>=768; renderCurrent(); resetZoom(); });
+
+// ------------------- Zoom / Pan -------------------
+let zoomLevel=1, panX=0, panY=0;
+let isDragging=false,lastX=0,lastY=0;
+
+function applyTransform(){ spread.style.transform=`translate(${panX}px, ${panY}px) scale(${zoomLevel})`; }
+function resetZoom(){ zoomLevel=1;panX=0;panY=0;applyTransform(); }
+
+// PC zoom
+canvasWrap.addEventListener('wheel', e=>{
+  if(e.ctrlKey || !twoPageMode){
     e.preventDefault();
-    let delta=e.deltaY<0?0.1:-0.1;
+    let delta = e.deltaY<0?0.1:-0.1;
     zoomLevel=Math.min(Math.max(zoomLevel+delta,1),4);
     applyTransform();
   }
 },{passive:false});
 
-spread.addEventListener('mousedown',e=>{
+// PC pan
+spread.addEventListener('mousedown', e=>{
   if(zoomLevel<=1)return;
-  isDragging=true; lastX=e.clientX; lastY=e.clientY; spread.style.cursor="grabbing";
+  isDragging=true;lastX=e.clientX;lastY=e.clientY;spread.style.cursor="grabbing";
 });
-window.addEventListener('mouseup',()=>{isDragging=false;spread.style.cursor="default";});
-window.addEventListener('mousemove',e=>{
-  if(isDragging){ panX+=e.clientX-lastX; panY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; applyTransform();}
+window.addEventListener('mouseup', ()=>{isDragging=false;spread.style.cursor="default";});
+window.addEventListener('mousemove', e=>{
+  if(isDragging){ panX+=e.clientX-lastX;panY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;applyTransform(); }
 });
 
-// Mobile: pinch zoom + pan
+// Mobile pinch zoom + pan
 let pinchStartDist=0,pinchStartZoom=1;
-canvasWrap.addEventListener('touchstart',e=>{
+canvasWrap.addEventListener('touchstart', e=>{
   if(e.touches.length===2){
     const dx=e.touches[0].clientX-e.touches[1].clientX;
     const dy=e.touches[0].clientY-e.touches[1].clientY;
@@ -211,7 +225,7 @@ canvasWrap.addEventListener('touchstart',e=>{
   }
 },{passive:true});
 
-canvasWrap.addEventListener('touchmove',e=>{
+canvasWrap.addEventListener('touchmove', e=>{
   if(e.touches.length===2){
     e.preventDefault();
     const dx=e.touches[0].clientX-e.touches[1].clientX;
@@ -219,37 +233,41 @@ canvasWrap.addEventListener('touchmove',e=>{
     const dist=Math.sqrt(dx*dx+dy*dy);
     zoomLevel=Math.min(Math.max(pinchStartZoom*(dist/pinchStartDist),1),4);
     applyTransform();
-  } else if(e.touches.length===1&&zoomLevel>1){
+  } else if(e.touches.length===1 && zoomLevel>1){
     e.preventDefault();
     const touch=e.touches[0];
-    if(!lastX||!lastY){ lastX=touch.clientX; lastY=touch.clientY; return; }
-    panX+=touch.clientX-lastX; panY+=touch.clientY-lastY;
-    lastX=touch.clientX; lastY=touch.clientY; applyTransform();
+    if(!lastX||!lastY){lastX=touch.clientX;lastY=touch.clientY;return;}
+    panX+=touch.clientX-lastX;panY+=touch.clientY-lastY;
+    lastX=touch.clientX;lastY=touch.clientY;applyTransform();
   }
 },{passive:false});
 
-canvasWrap.addEventListener('touchend',()=>{lastX=lastY=0;if(zoomLevel<=1.01)resetZoom();});
+canvasWrap.addEventListener('touchend', e=>{ lastX=lastY=0; if(zoomLevel<=1.01) resetZoom(); });
 
-// Double click PC / Double tap mobile
-canvasWrap.addEventListener('dblclick',resetZoom);
+// Mobile swipe để lật trang (chỉ khi zoom = 1)
+let touchStartX=0;
+canvasWrap.addEventListener('touchstart', e=>{
+  if(e.touches.length===1 && zoomLevel===1){
+    touchStartX=e.touches[0].clientX;
+  }
+},{passive:true});
+canvasWrap.addEventListener('touchend', e=>{
+  if(e.changedTouches && e.changedTouches.length===1 && zoomLevel===1){
+    let dx=e.changedTouches[0].clientX-touchStartX;
+    if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); }
+  }
+},{passive:true});
+
+// Double click/tap reset zoom
+canvasWrap.addEventListener('dblclick', resetZoom);
 let lastTap=0;
-canvasWrap.addEventListener('touchend',e=>{
-  const now=Date.now();
-  if(now-lastTap<300){resetZoom();e.preventDefault();}
+canvasWrap.addEventListener('touchend', e=>{
+  const now=new Date().getTime();
+  if(now-lastTap<300){ resetZoom(); e.preventDefault(); }
   lastTap=now;
 });
 
-// ----------- Controls ----------- 
-btnNext.addEventListener('click',()=>{nextPage();});
-btnPrev.addEventListener('click',()=>{prevPage();});
-btnPlayPause.addEventListener('click',()=>{autoplayEnabled=!autoplayEnabled;btnPlayPause.textContent=autoplayEnabled?'Pause':'Play';if(autoplayEnabled)startAutoplay();else stopAutoplay();});
-btnFirst.addEventListener('click',()=>{gotoPage(1);});
-btnLast.addEventListener('click',()=>{gotoPage(totalPagesAll);});
-
-window.addEventListener('resize',()=>{twoPageMode=window.innerWidth>=768;renderCurrent();resetZoom();});
-
-// ----------- Start -----------
-loadInitial();
+loadAllPdfs();
 </script>
 </body>
 </html>
