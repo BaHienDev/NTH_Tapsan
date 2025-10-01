@@ -6,7 +6,7 @@
 <title>TẬP SAN KỈ NIỆM 20 NĂM THÀNH LẬP TRƯỜNG THPT NGUYỄN THƯỢNG HIỀN</title>
 <style>
   html,body{height:100%;margin:0;font-family:Arial;background:#111;color:#fff;overflow:hidden}
-  .viewer{width:100%;height:100%;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
+  .viewer{width:100%;height:100%;display:flex;align-items:center;justify-content:center;box-sizing:border-box;display:none}
   .canvas-wrap{width:100%;height:100%;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
   canvas{display:block;background:#000;margin:0 4px;border-radius:4px}
   .arrow{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.4);border-radius:40px;padding:12px;cursor:pointer;z-index:10}
@@ -19,10 +19,68 @@
   @media (max-width: 767px) {
     .controls, .arrow { display:none !important; }
   }
+
+  /* Loading overlay */
+  #loading {
+    position: fixed;
+    top:0;left:0;width:100%;height:100%;
+    background:#111;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    z-index:9999;
+    color:#fff;
+    opacity:1;
+    transition: opacity 0.6s ease;
+  }
+  #loading.fade-out {
+    opacity:0;
+    pointer-events:none;
+  }
+  #loading-logo {
+    width:120px;
+    height:auto;
+    margin-bottom:20px;
+  }
+  .spinner {
+    border:6px solid rgba(255,255,255,0.1);
+    border-top:6px solid #fff;
+    border-radius:50%;
+    width:50px;
+    height:50px;
+    animation: spin 1s linear infinite;
+    margin-bottom:20px;
+  }
+  @keyframes spin {
+    0% { transform:rotate(0deg); }
+    100% { transform:rotate(360deg); }
+  }
+  .loading-text {
+    font-size:18px;
+  }
+  .loading-text::after {
+    content:"";
+    animation: dots 1.5s infinite;
+  }
+  @keyframes dots {
+    0% { content:""; }
+    33% { content:"."; }
+    66% { content:".."; }
+    100% { content:"..."; }
+  }
 </style>
 </head>
 <body>
-  <div class="viewer">
+  <!-- Loading Screen -->
+  <div id="loading">
+    <img id="loading-logo" src="logo.png" alt="Logo"> <!-- đổi logo.png bằng logo của bạn -->
+    <div class="spinner"></div>
+    <div class="loading-text">Đang tải dữ liệu</div>
+  </div>
+
+  <!-- PDF Viewer -->
+  <div class="viewer" id="viewer">
     <div class="canvas-wrap" id="canvasWrap">
       <canvas id="pdfCanvasLeft"></canvas>
       <canvas id="pdfCanvasRight" style="display:none"></canvas>
@@ -55,6 +113,8 @@ const btnPlayPause = document.getElementById('btnPlayPause');
 const btnFirst = document.getElementById('btnFirst');
 const btnLast = document.getElementById('btnLast');
 const canvasWrap = document.getElementById('canvasWrap');
+const loading = document.getElementById('loading');
+const viewer = document.getElementById('viewer');
 
 let pdfDoc = null, currentPage = 1, totalPages = 0;
 let autoplayTimer = null, autoplayEnabled = true;
@@ -65,7 +125,10 @@ async function loadPdf(){
   pdfDoc = await loadingTask.promise;
   totalPages = pdfDoc.numPages;
   updateIndicator();
-  renderCurrent();
+  await renderCurrent(); // render xong trang đầu
+  // Ẩn loading với fade-out
+  loading.classList.add("fade-out");
+  setTimeout(()=>{ loading.style.display="none"; viewer.style.display="flex"; }, 600);
   startAutoplay();
 }
 
