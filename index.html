@@ -105,7 +105,12 @@ async function loadPdf(){
   await renderCurrent();
   updateIndicator();
   startAutoplay();
-  setTimeout(()=> loadingOverlay.classList.add("fade-out"), 300);
+  hideLoading();
+}
+
+function hideLoading(){
+  loadingOverlay.classList.add("fade-out");
+  setTimeout(()=> loadingOverlay.style.display="none", 600);
 }
 
 // scale PC fit height, Mobile fit width
@@ -165,16 +170,27 @@ function pauseTemporarily(){ if(autoplayEnabled){ stopAutoplay(); if(resumeTimeo
 
 window.addEventListener('resize', ()=> { twoPageMode = window.innerWidth>=768; renderCurrent(); resetZoom(); });
 
-// Vuốt mobile để lật trang
+// ------------------- Swipe mobile -------------------
 let touchStartX=0;
-canvasWrap.addEventListener('touchstart', e=>{ if(e.touches.length===1) touchStartX=e.touches[0].clientX; pauseTemporarily(); }, {passive:true});
-canvasWrap.addEventListener('touchend', e=>{ if(!e.changedTouches) return; let dx=e.changedTouches[0].clientX-touchStartX; if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); } }, {passive:true});
+canvasWrap.addEventListener('touchstart', e=>{
+  if(e.touches.length===1 && zoomLevel===1){
+    touchStartX=e.touches[0].clientX;
+    pauseTemporarily();
+  }
+}, {passive:true});
+
+canvasWrap.addEventListener('touchend', e=>{
+  if(zoomLevel===1 && e.changedTouches && e.changedTouches.length){
+    let dx=e.changedTouches[0].clientX-touchStartX;
+    if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); }
+  }
+}, {passive:true});
 
 // ------------------- Zoom / Pan -------------------
 let zoomLevel = 1, panX = 0, panY = 0;
 let isDragging = false, lastX = 0, lastY = 0;
 
-// áp dụng transform
+// transform apply
 function applyTransform() {
   spread.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
 }
@@ -187,7 +203,7 @@ canvasWrap.addEventListener('wheel', e => {
   if (e.ctrlKey || !twoPageMode) {
     e.preventDefault();
     let delta = e.deltaY < 0 ? 0.1 : -0.1;
-    zoomLevel = Math.min(Math.max(zoomLevel + delta, 1), 4); // giới hạn 1x–4x
+    zoomLevel = Math.min(Math.max(zoomLevel + delta, 1), 4);
     applyTransform();
   }
 }, { passive: false });
@@ -229,10 +245,9 @@ canvasWrap.addEventListener('touchmove', e=>{
     applyTransform();
   }
   else if(e.touches.length===1 && zoomLevel > 1){
-    // Pan bằng 1 ngón khi zoom > 1
     e.preventDefault();
     const touch = e.touches[0];
-    if(!lastX || !lastY){ lastX = touch.clientX; lastY = touch.clientY; return; }
+    if(!lastX && !lastY){ lastX = touch.clientX; lastY = touch.clientY; return; }
     panX += touch.clientX - lastX;
     panY += touch.clientY - lastY;
     lastX = touch.clientX; lastY = touch.clientY;
