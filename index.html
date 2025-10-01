@@ -16,7 +16,7 @@
   .viewer {
     width:100%;
     height:100%;
-    display:flex; /* Luôn hiện viewer */
+    display:flex;
     align-items:center;
     justify-content:center;
     box-sizing:border-box;
@@ -29,12 +29,14 @@
     justify-content:center;
     position:relative;
     overflow:hidden;
+    background:#000;
   }
   canvas {
     display:block;
-    background:#000;
     margin:0 4px;
     border-radius:4px;
+    transform-origin:center center;
+    cursor:grab;
   }
   .arrow {
     position:absolute;
@@ -100,7 +102,7 @@
     width:60px;
     height:60px;
     animation:spin 1s linear infinite;
-    margin-bottom:20px;
+    margin:20px 0;
   }
   @keyframes spin {
     0%{transform:rotate(0deg)}
@@ -110,11 +112,16 @@
     font-size:16px;
     color:#fff;
   }
+  .logo {
+    width:120px;
+    margin-bottom:20px;
+  }
 </style>
 </head>
 <body>
   <!-- Loading -->
   <div class="loading-overlay" id="loading">
+    <img src="logo.png" alt="Logo" class="logo">
     <div class="spinner"></div>
     <div class="loading-text">Đang tải dữ liệu<span id="dots">...</span></div>
   </div>
@@ -137,7 +144,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc = 
+pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 
 const pdfUrl = "./tapsan-29-9-25.pdf";
@@ -161,6 +168,11 @@ let pdfDoc = null, currentPage = 1, totalPages = 0;
 let autoplayTimer = null, autoplayEnabled = true;
 let twoPageMode = window.innerWidth >= 768;
 
+// Zoom state
+let zoomScale = 1;
+let offsetX = 0, offsetY = 0;
+let isDragging = false, dragStartX=0, dragStartY=0;
+
 // hiệu ứng chấm chấm (...)
 let dotCount = 0;
 setInterval(()=>{
@@ -173,8 +185,7 @@ async function loadPdf(){
   pdfDoc = await loadingTask.promise;
   totalPages = pdfDoc.numPages;
   updateIndicator();
-  await renderCurrent(); // render trước khi ẩn loading
-  // fade-out loading
+  await renderCurrent();
   loading.classList.add("fade-out");
   setTimeout(()=>{ loading.style.display="none"; },600);
   startAutoplay();
@@ -184,9 +195,9 @@ function resizeCanvas(canvas, viewport){
   const ratio = window.devicePixelRatio || 1;
   let scale;
   if(twoPageMode){
-    scale = (canvasWrap.clientHeight) / viewport.height; // PC fit height
+    scale = (canvasWrap.clientHeight) / viewport.height;
   } else {
-    scale = (canvasWrap.clientWidth) / viewport.width;   // Mobile fit width
+    scale = (canvasWrap.clientWidth) / viewport.width;
   }
   const scaled = viewport.clone({ scale: scale * ratio });
   canvas.width = scaled.width;
@@ -218,6 +229,7 @@ async function renderCurrent(){
     await renderPage(currentPage, canvasLeft, ctxLeft);
   }
   updateIndicator();
+  applyTransform();
 }
 
 function updateIndicator(){
@@ -274,17 +286,81 @@ window.addEventListener('resize', ()=> {
   renderCurrent(); 
 });
 
-// Vuốt trên mobile
+// Vuốt trên mobile (chuyển trang)
 let touchStartX=0;
+let pinchStartDist = 0;
+let pinchStartScale = 1;
+
 canvasWrap.addEventListener('touchstart', e=>{
-  if(e.touches.length===1) touchStartX=e.touches[0].clientX; 
-  pauseTemporarily(); 
+  if(e.touches.length===1){
+    touchStartX = e.touches[0].clientX;
+    isDragging = true;
+    dragStartX = e.touches[0].clientX - offsetX;
+    dragStartY = e.touches[0].clientY - offsetY;
+  } else if(e.touches.length===2){
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    pinchStartDist = Math.sqrt(dx*dx+dy*dy);
+    pinchStartScale = zoomScale;
+  }
 }, {passive:true});
+
+canvasWrap.addEventListener('touchmove', e=>{
+  if(e.touches.length===1 && zoomScale>1){
+    offsetX = e.touches[0].clientX - dragStartX;
+    offsetY = e.touches[0].clientY - dragStartY;
+    applyTransform();
+  } else if(e.touches.length===2){
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+    zoomScale = Math.max(1, pinchStartScale * (dist/pinchStartDist));
+    applyTransform();
+  }
+}, {passive:true});
+
 canvasWrap.addEventListener('touchend', e=>{
-  if(!e.changedTouches) return; 
-  let dx=e.changedTouches[0].clientX-touchStartX; 
-  if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); } 
+  if(e.touches.length===0 && e.changedTouches.length===1 && zoomScale===1){
+    let dx=e.changedTouches[0].clientX-touchStartX;
+    if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); }
+  }
+  isDragging=false;
 }, {passive:true});
+
+// PC zoom + pan
+canvasWrap.addEventListener('wheel', e=>{
+  if(e.deltaY<0) zoomScale *= 1.1;
+  else zoomScale /= 1.1;
+  zoomScale = Math.max(1, Math.min(zoomScale,5));
+  applyTransform();
+  e.preventDefault();
+},{passive:false});
+
+canvasWrap.addEventListener('mousedown', e=>{
+  if(zoomScale>1){
+    isDragging = true;
+    dragStartX = e.clientX - offsetX;
+    dragStartY = e.clientY - offsetY;
+    canvasLeft.style.cursor="grabbing";
+  }
+});
+canvasWrap.addEventListener('mousemove', e=>{
+  if(isDragging){
+    offsetX = e.clientX - dragStartX;
+    offsetY = e.clientY - dragStartY;
+    applyTransform();
+  }
+});
+canvasWrap.addEventListener('mouseup', ()=>{
+  isDragging=false;
+  canvasLeft.style.cursor="grab";
+});
+
+function applyTransform(){
+  const transform = `translate(${offsetX}px, ${offsetY}px) scale(${zoomScale})`;
+  canvasLeft.style.transform = transform;
+  canvasRight.style.transform = transform;
+}
 
 loadPdf();
 </script>
