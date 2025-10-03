@@ -199,82 +199,126 @@ canvasWrap.addEventListener('touchend', e=>{
 }, {passive:true});
 
 // --- Zoom & Pan ---
-let zoomLevel=1, panX=0, panY=0;
-let isDragging=false, lastX=0, lastY=0;
-let isPinching=false, pinchStartDist=0, pinchStartZoom=1;
+let zoomLevel = 1, panX = 0, panY = 0;
+let isDragging = false, lastX = 0, lastY = 0;
+let isPinching = false, pinchStartDist = 0, pinchStartZoom = 1;
 
-function applyTransform(){ spread.style.transform = `translate(${panX}px,${panY}px) scale(${zoomLevel})`; }
-function resetZoom(){ zoomLevel=1; panX=0; panY=0; applyTransform(); }
+function applyTransform() {
+  spread.style.transform = `translate(${panX}px,${panY}px) scale(${zoomLevel})`;
+}
 
-// PC: scroll zoom
-canvasWrap.addEventListener('wheel', e=>{
-  if(e.ctrlKey || !twoPageMode){
+function resetZoom() {
+  zoomLevel = 1;
+  panX = 0;
+  panY = 0;
+  applyTransform();
+}
+
+function canTurnPage() {
+  return zoomLevel === 1;
+}
+
+// --- PC: scroll zoom ---
+canvasWrap.addEventListener('wheel', e => {
+  if (e.ctrlKey || !twoPageMode) {
     e.preventDefault();
-    let delta = e.deltaY<0?0.1:-0.1;
-    zoomLevel = Math.min(Math.max(zoomLevel+delta,1),4);
+    let delta = e.deltaY < 0 ? 0.1 : -0.1;
+    zoomLevel = Math.min(Math.max(zoomLevel + delta, 1), 4);
+
+    if (zoomLevel === 1) {
+      resetZoom(); // luôn về giữa
+    } else {
+      panX = 0; panY = 0; // giữ ở tâm
+      applyTransform();
+    }
+  }
+}, { passive: false });
+
+// --- PC: pan khi zoom ---
+spread.addEventListener('mousedown', e => {
+  if (zoomLevel <= 1) return;
+  isDragging = true; 
+  lastX = e.clientX; 
+  lastY = e.clientY; 
+  spread.style.cursor = "grabbing";
+});
+window.addEventListener('mouseup', () => { 
+  isDragging = false; 
+  spread.style.cursor = "default"; 
+});
+window.addEventListener('mousemove', e => {
+  if (isDragging) {
+    panX += e.clientX - lastX; 
+    panY += e.clientY - lastY; 
+    lastX = e.clientX; 
+    lastY = e.clientY; 
     applyTransform();
   }
-},{passive:false});
-
-// PC: pan
-spread.addEventListener('mousedown', e=>{
-  if(zoomLevel<=1) return;
-  isDragging=true; lastX=e.clientX; lastY=e.clientY; spread.style.cursor="grabbing";
-});
-window.addEventListener('mouseup', ()=>{isDragging=false; spread.style.cursor="default";});
-window.addEventListener('mousemove', e=>{
-  if(isDragging){ panX+=e.clientX-lastX; panY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; applyTransform(); }
 });
 
-// Mobile pinch zoom
-canvasWrap.addEventListener('touchstart', e=>{
-  if(e.touches.length===2){
-    isPinching=true;
-    const dx=e.touches[0].clientX-e.touches[1].clientX;
-    const dy=e.touches[0].clientY-e.touches[1].clientY;
-    pinchStartDist=Math.sqrt(dx*dx+dy*dy);
-    pinchStartZoom=zoomLevel;
+// --- Mobile: pinch zoom ---
+canvasWrap.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    isPinching = true;
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    pinchStartDist = Math.sqrt(dx*dx + dy*dy);
+    pinchStartZoom = zoomLevel;
   }
-},{passive:true});
+}, { passive: true });
 
-canvasWrap.addEventListener('touchmove', e=>{
-  if(isPinching && e.touches.length===2){
+canvasWrap.addEventListener('touchmove', e => {
+  if (isPinching && e.touches.length === 2) {
     e.preventDefault();
-    const dx=e.touches[0].clientX-e.touches[1].clientX;
-    const dy=e.touches[0].clientY-e.touches[1].clientY;
-    const dist=Math.sqrt(dx*dx+dy*dy);
-    zoomLevel=Math.min(Math.max(pinchStartZoom*(dist/pinchStartDist),1),4);
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    zoomLevel = Math.min(Math.max(pinchStartZoom * (dist / pinchStartDist), 1), 4);
+
+    if (zoomLevel === 1) {
+      resetZoom(); // về giữa khi thu nhỏ hết
+    } else {
+      panX = 0; panY = 0; // giữ ở tâm khi zoom
+      applyTransform();
+    }
+  } 
+  else if (e.touches.length === 1 && zoomLevel > 1) {
+    e.preventDefault();
+    const t = e.touches[0];
+    if (!lastX || !lastY) { lastX = t.clientX; lastY = t.clientY; return; }
+    panX += t.clientX - lastX; 
+    panY += t.clientY - lastY; 
+    lastX = t.clientX; 
+    lastY = t.clientY; 
     applyTransform();
-  } else if(e.touches.length===1 && zoomLevel>1){
-    e.preventDefault();
-    const t=e.touches[0];
-    if(!lastX||!lastY){ lastX=t.clientX; lastY=t.clientY; return; }
-    panX+=t.clientX-lastX; panY+=t.clientY-lastY; lastX=t.clientX; lastY=t.clientY; applyTransform();
   }
-},{passive:false});
+}, { passive: false });
 
-canvasWrap.addEventListener('touchend', e=>{
-  if(isPinching && e.touches.length<2){
-    isPinching=false;
+canvasWrap.addEventListener('touchend', e => {
+  if (isPinching && e.touches.length < 2) {
+    isPinching = false;
   }
-  lastX=lastY=0;
-  // ❌ Không auto reset khi zoomLevel ~1 nữa
-});
+  lastX = lastY = 0;
+}, { passive: true });
 
-// Double-click PC reset
+// --- Double-click PC reset ---
 canvasWrap.addEventListener('dblclick', resetZoom);
 
-// Double-tap mobile reset
-let lastTap=0;
+// --- Double-tap mobile reset ---
+let lastTap = 0;
 canvasWrap.addEventListener('touchend', function(e){
-  const now=Date.now();
-  if(e.touches.length===0 && e.changedTouches.length===1 && zoomLevel===1){
-    if(now-lastTap<300){ resetZoom(); e.preventDefault(); }
-    lastTap=now;
+  const now = Date.now();
+  if (e.touches.length === 0 && e.changedTouches.length === 1 && zoomLevel === 1) {
+    if (now - lastTap < 300) { 
+      resetZoom(); 
+      e.preventDefault(); 
+    }
+    lastTap = now;
   } else {
-    lastTap=0;
+    lastTap = 0;
   }
-},{passive:true});
+}, { passive: true });
+
 
 // start
 loadAllPdfs();
