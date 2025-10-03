@@ -24,16 +24,17 @@
   .loading-text{font-size:18px;color:#ccc}
   .loading-dots::after{content:"";animation:dots 1.5s steps(3,end) infinite;}
   @keyframes dots{0%{content:"";}33%{content:".";}66%{content:"..";}100%{content:"...";}}
-  /* Mobile navigation */
+
+  /* Mobile navigation (fixed, không bị zoom ảnh hưởng) */
   @media (max-width: 767px) {
     .mobile-nav {
-      position: absolute;
+      position: fixed;
       bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
       display: flex;
       gap: 20px;
-      z-index: 20;
+      z-index: 200; /* cao hơn canvas */
     }
     .mobile-btn {
       padding: 10px 18px;
@@ -68,12 +69,13 @@
         <button id="btnFirst" class="btn">First</button>
         <button id="btnLast" class="btn">Last</button>
       </div>
-      <!-- Mobile navigation -->
-      <div class="mobile-nav" id="mobileNav" style="display:none">
-        <button id="btnPrevMobile" class="mobile-btn">◀ Trang trước</button>
-        <button id="btnNextMobile" class="mobile-btn">Trang sau ▶</button>
-      </div>
     </div>
+  </div>
+
+  <!-- Mobile navigation đặt ngoài canvasWrap để không bị zoom -->
+  <div class="mobile-nav" id="mobileNav" style="display:none">
+    <button id="btnPrevMobile" class="mobile-btn">◀ Trang trước</button>
+    <button id="btnNextMobile" class="mobile-btn">Trang sau ▶</button>
   </div>
 
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
@@ -101,7 +103,6 @@ let autoplayTimer=null,autoplayEnabled=true;
 
 // Zoom & Pan
 let zoomLevel=1,panX=0,panY=0,isDragging=false,lastX=0,lastY=0;
-let isPinching=false,pinchStartDist=0,pinchStartZoom=1,pinchCenter={x:0,y:0};
 
 async function loadAllPdfs(){
   let cumulative=0;
@@ -139,19 +140,17 @@ async function renderPage(globalPage,canvas,ctx){
   await page.render({canvasContext:ctx,viewport}).promise;
 }
 async function renderCurrent(){
-  if(zoomLevel===1) resetZoom();
   if(twoPageMode){canvasRight.style.display="block"; await renderPage(currentPage,canvasLeft,ctxLeft); await renderPage(currentPage+1,canvasRight,ctxRight);}
   else{canvasRight.style.display="none"; await renderPage(currentPage,canvasLeft,ctxLeft);}
-  if(zoomLevel===1) spread.style.transform="";
-  else applyTransform();
+  resetZoom(); // đảm bảo luôn về mặc định sau khi render
   updateIndicator();
   updateMobileNav();
 }
 function updateIndicator(){pageIndicator.textContent=`${currentPage} / ${totalPages}`;}
 function canTurnPage(){return zoomLevel===1;}
-function gotoPage(n){if(!canTurnPage())return; if(n<1)n=1;if(n>totalPages)n=totalPages; currentPage=n;renderCurrent();}
-function nextPage(){if(!canTurnPage())return; currentPage+=(twoPageMode?2:1); if(currentPage>totalPages)currentPage=1; renderCurrent();}
-function prevPage(){if(!canTurnPage())return; currentPage-=(twoPageMode?2:1); if(currentPage<1) currentPage=(twoPageMode?(totalPages%2==0?totalPages-1:totalPages):totalPages); renderCurrent();}
+function gotoPage(n){if(n<1)n=1;if(n>totalPages)n=totalPages; currentPage=n;renderCurrent();}
+function nextPage(){currentPage+=(twoPageMode?2:1); if(currentPage>totalPages)currentPage=1; renderCurrent();}
+function prevPage(){currentPage-=(twoPageMode?2:1); if(currentPage<1) currentPage=(twoPageMode?(totalPages%2==0?totalPages-1:totalPages):totalPages); renderCurrent();}
 function startAutoplay(){stopAutoplay(); if(!autoplayEnabled)return; autoplayTimer=setInterval(()=>nextPage(),autoplayInterval);}
 function stopAutoplay(){if(autoplayTimer){clearInterval(autoplayTimer);autoplayTimer=null;}}
 btnNext.addEventListener('click',()=>{nextPage();pauseTemporarily();});
@@ -172,18 +171,10 @@ function updateMobileNav() {
   }
 }
 btnPrevMobile.addEventListener('click', () => {
-  if (currentPage > 1) {
-    resetZoom();
-    currentPage--;
-    renderCurrent();
-  }
+  if (currentPage > 1) { currentPage--; renderCurrent(); }
 });
 btnNextMobile.addEventListener('click', () => {
-  if (currentPage < totalPages) {
-    resetZoom();
-    currentPage++;
-    renderCurrent();
-  }
+  if (currentPage < totalPages) { currentPage++; renderCurrent(); }
 });
 
 // --- Zoom & Pan ---
@@ -210,7 +201,7 @@ window.addEventListener('mousemove',e=>{if(isDragging){panX+=e.clientX-lastX;pan
 
 // start
 loadAllPdfs();
-window.addEventListener('resize',()=>{twoPageMode=window.innerWidth>=768;renderCurrent();resetZoom();updateMobileNav();});
+window.addEventListener('resize',()=>{twoPageMode=window.innerWidth>=768;renderCurrent();updateMobileNav();});
 </script>
 </body>
 </html>
