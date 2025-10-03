@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>TẬP SAN KỈ NIỆM 20 NĂM THÀNH LẬP TRƯỜNG THPT NGUYỄN THƯỢNG HIỀN</title>
+<title>TẬP SAN KỈ NIỆM 20 NĂM THPT NGUYỄN THƯỢNG HIỀN</title>
 <style>
   html,body{height:100%;margin:0;font-family:Arial;background:#111;color:#fff;overflow:hidden}
-  .viewer{width:100%;height:100%;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
+  .viewer{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
   .canvas-wrap{width:100%;height:100%;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
   .spread{display:flex;align-items:center;justify-content:center;transition:transform 0.2s ease}
   canvas{display:block;background:#000;margin:0 2px;border-radius:4px}
@@ -15,40 +15,18 @@
   .page-ind{position:absolute;top:10px;right:20px;color:#bbb;font-size:14px}
   .controls{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px}
   .btn{padding:6px 12px;border-radius:6px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);cursor:pointer;color:#fff}
-
-  /* Ẩn nút điều khiển và mũi tên trên mobile */
-  @media (max-width: 767px) {
-    .controls, .arrow { display:none !important; }
-  }
-
-  /* Loading overlay */
-  #loadingOverlay {
-    position:fixed;top:0;left:0;width:100%;height:100%;
-    background:#111;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;z-index:100;
-    transition:opacity 0.6s ease;
-  }
+  @media (max-width: 767px){ .controls, .arrow { display:none !important; } }
+  #loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;transition:opacity 0.6s ease;}
   #loadingOverlay.fade-out{opacity:0;pointer-events:none;}
-  #loadingOverlay img{width:120px;height:auto;margin-bottom:20px;}
-  .loader {
-    border:6px solid #333;border-top:6px solid #09f;border-radius:50%;
-    width:50px;height:50px;animation:spin 1s linear infinite;margin-bottom:15px;
-  }
+  #loadingOverlay img{width:120px;margin-bottom:20px;}
+  .loader{border:6px solid #333;border-top:6px solid #09f;border-radius:50%;width:50px;height:50px;animation:spin 1s linear infinite;margin-bottom:15px;}
   @keyframes spin{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
   .loading-text{font-size:18px;color:#ccc}
-  .loading-dots::after {
-    content:"";animation: dots 1.5s steps(3,end) infinite;
-  }
-  @keyframes dots {
-    0%{content:"";}
-    33%{content:".";}
-    66%{content:"..";}
-    100%{content:"...";}
-  }
+  .loading-dots::after{content:"";animation:dots 1.5s steps(3,end) infinite;}
+  @keyframes dots{0%{content:"";}33%{content:".";}66%{content:"..";}100%{content:"...";}}
 </style>
 </head>
 <body>
-  <!-- Loading -->
   <div id="loadingOverlay">
     <img src="logo.png" alt="Logo">
     <div class="loader"></div>
@@ -74,274 +52,132 @@
 
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 
-// --- danh sách file pdf đã tách ---
 const partFiles = Array.from({length:20}, (_,i)=>`./tapsan${i+1}.pdf`);
+const autoplayInterval=60000;
+const canvasLeft=document.getElementById('pdfCanvasLeft'),ctxLeft=canvasLeft.getContext('2d');
+const canvasRight=document.getElementById('pdfCanvasRight'),ctxRight=canvasRight.getContext('2d');
+const pageIndicator=document.getElementById('pageIndicator');
+const btnPrev=document.getElementById('btnPrev'),btnNext=document.getElementById('btnNext');
+const btnPlayPause=document.getElementById('btnPlayPause'),btnFirst=document.getElementById('btnFirst'),btnLast=document.getElementById('btnLast');
+const canvasWrap=document.getElementById('canvasWrap'),spread=document.getElementById('spread');
+const loadingOverlay=document.getElementById('loadingOverlay');
 
-const autoplayInterval = 60000;
-const canvasLeft = document.getElementById('pdfCanvasLeft');
-const ctxLeft = canvasLeft.getContext('2d');
-const canvasRight = document.getElementById('pdfCanvasRight');
-const ctxRight = canvasRight.getContext('2d');
-const pageIndicator = document.getElementById('pageIndicator');
-const btnPrev = document.getElementById('btnPrev');
-const btnNext = document.getElementById('btnNext');
-const btnPlayPause = document.getElementById('btnPlayPause');
-const btnFirst = document.getElementById('btnFirst');
-const btnLast = document.getElementById('btnLast');
-const canvasWrap = document.getElementById('canvasWrap');
-const spread = document.getElementById('spread');
-const loadingOverlay = document.getElementById('loadingOverlay');
+let pdfDocs=[],partPageCounts=[],totalPages=0,currentPage=1;
+let twoPageMode=window.innerWidth>=768;
+let autoplayTimer=null,autoplayEnabled=true;
 
-let pdfDocs = [];
-let partPageCounts = [];
-let totalPages = 0;
-let currentPage = 1;
-let twoPageMode = window.innerWidth >= 768;
-let autoplayTimer = null, autoplayEnabled = true;
-
-// --- Zoom & Pan state ---
-let zoomLevel = 1, panX = 0, panY = 0;
-let isDragging = false, lastX = 0, lastY = 0;
-let isPinching = false, pinchStartDist = 0, pinchStartZoom = 1;
-let pinchCenter = {x:0,y:0};
-
-// reset transform
-function applyTransform() {
-  spread.style.transformOrigin = "0 0"; 
-  spread.style.transform = `translate(${panX}px,${panY}px) scale(${zoomLevel})`;
-}
-function resetZoom() {
-  zoomLevel = 1;
-  panX = 0;
-  panY = 0;
-  spread.style.transform = "none"; // xoá toàn bộ transform
-}
-function canTurnPage() { return zoomLevel === 1; }
-
-// --- load nhiều file PDF ---
 async function loadAllPdfs(){
-  let cumulative = 0;
+  let cumulative=0;
   for(let i=0;i<partFiles.length;i++){
-    const doc = await pdfjsLib.getDocument(partFiles[i]).promise;
+    const doc=await pdfjsLib.getDocument(partFiles[i]).promise;
     pdfDocs.push(doc);
     partPageCounts.push(doc.numPages);
-    cumulative += doc.numPages;
-    totalPages = cumulative;
-    if(i===0){ // render part1 ngay khi xong
-      await renderCurrent();
-      updateIndicator();
-      setTimeout(()=> loadingOverlay.classList.add("fade-out"), 300);
-    }
+    cumulative+=doc.numPages; totalPages=cumulative;
+    if(i===0){ await renderCurrent(); updateIndicator(); setTimeout(()=>loadingOverlay.classList.add("fade-out"),300);}
   }
   startAutoplay();
 }
-
 function findPartAndPage(globalPage){
   let sum=0;
   for(let i=0;i<pdfDocs.length;i++){
     let count=partPageCounts[i];
     if(globalPage<=sum+count) return {part:i,page:globalPage-sum};
     sum+=count;
-  }
-  return null;
+  } return null;
 }
-
-function resizeCanvas(canvas, viewport){
-  const ratio = window.devicePixelRatio || 1;
-  let scale;
-  if(twoPageMode){ scale = (canvasWrap.clientHeight) / viewport.height; }
-  else { scale = (canvasWrap.clientWidth) / viewport.width; }
-  const scaled = viewport.clone({ scale: scale * ratio });
-  canvas.width = scaled.width;
-  canvas.height = scaled.height;
-  canvas.style.width = (scaled.width/ratio)+"px";
-  canvas.style.height = (scaled.height/ratio)+"px";
+function resizeCanvas(canvas,viewport){
+  const ratio=window.devicePixelRatio||1;
+  let scale=twoPageMode?(canvasWrap.clientHeight/viewport.height):(canvasWrap.clientWidth/viewport.width);
+  const scaled=viewport.clone({scale:scale*ratio});
+  canvas.width=scaled.width; canvas.height=scaled.height;
+  canvas.style.width=(scaled.width/ratio)+"px"; canvas.style.height=(scaled.height/ratio)+"px";
   return scale;
 }
-
-async function renderPage(globalPage, canvas, ctx){
-  const partInfo = findPartAndPage(globalPage);
-  if(!partInfo){ ctx.clearRect(0,0,canvas.width,canvas.height); return; }
-  const pdfDoc = pdfDocs[partInfo.part];
-  const page = await pdfDoc.getPage(partInfo.page);
-  const unscaled = page.getViewport({ scale: 1 });
-  const scale = resizeCanvas(canvas, unscaled);
-  const viewport = page.getViewport({ scale: scale * (window.devicePixelRatio||1) });
-  await page.render({canvasContext: ctx, viewport}).promise;
+async function renderPage(globalPage,canvas,ctx){
+  const partInfo=findPartAndPage(globalPage); if(!partInfo){ctx.clearRect(0,0,canvas.width,canvas.height);return;}
+  const pdfDoc=pdfDocs[partInfo.part]; const page=await pdfDoc.getPage(partInfo.page);
+  const unscaled=page.getViewport({scale:1}); const scale=resizeCanvas(canvas,unscaled);
+  const viewport=page.getViewport({scale:scale*(window.devicePixelRatio||1)});
+  await page.render({canvasContext:ctx,viewport}).promise;
 }
-
 async function renderCurrent(){
-  if (zoomLevel === 1) resetZoom(); // đảm bảo khi zoom = 1 thì reset
-  if(twoPageMode){
-    canvasRight.style.display = "block";
-    await renderPage(currentPage, canvasLeft, ctxLeft);
-    await renderPage(currentPage+1, canvasRight, ctxRight);
-  } else {
-    canvasRight.style.display = "none";
-    await renderPage(currentPage, canvasLeft, ctxLeft);
-  }
+  if(zoomLevel===1) resetZoom();
+  if(twoPageMode){canvasRight.style.display="block"; await renderPage(currentPage,canvasLeft,ctxLeft); await renderPage(currentPage+1,canvasRight,ctxRight);}
+  else{canvasRight.style.display="none"; await renderPage(currentPage,canvasLeft,ctxLeft);}
+  if(zoomLevel===1) spread.style.transform="";
+  else applyTransform();
   updateIndicator();
 }
+function updateIndicator(){pageIndicator.textContent=`${currentPage} / ${totalPages}`;}
+function canTurnPage(){return zoomLevel===1;}
+function gotoPage(n){if(!canTurnPage())return; if(n<1)n=1;if(n>totalPages)n=totalPages; currentPage=n;renderCurrent();}
+function nextPage(){if(!canTurnPage())return; currentPage+=(twoPageMode?2:1); if(currentPage>totalPages)currentPage=1; renderCurrent();}
+function prevPage(){if(!canTurnPage())return; currentPage-=(twoPageMode?2:1); if(currentPage<1) currentPage=(twoPageMode?(totalPages%2==0?totalPages-1:totalPages):totalPages); renderCurrent();}
+function startAutoplay(){stopAutoplay(); if(!autoplayEnabled)return; autoplayTimer=setInterval(()=>nextPage(),autoplayInterval);}
+function stopAutoplay(){if(autoplayTimer){clearInterval(autoplayTimer);autoplayTimer=null;}}
+btnNext.addEventListener('click',()=>{nextPage();pauseTemporarily();});
+btnPrev.addEventListener('click',()=>{prevPage();pauseTemporarily();});
+btnPlayPause.addEventListener('click',()=>{autoplayEnabled=!autoplayEnabled;btnPlayPause.textContent=autoplayEnabled?'Pause':'Play';if(autoplayEnabled)startAutoplay();else stopAutoplay();});
+btnFirst.addEventListener('click',()=>{gotoPage(1);pauseTemporarily();});
+btnLast.addEventListener('click',()=>{gotoPage(totalPages);pauseTemporarily();});
+let resumeTimeout=null; function pauseTemporarily(){if(autoplayEnabled){stopAutoplay();if(resumeTimeout)clearTimeout(resumeTimeout);resumeTimeout=setTimeout(()=>{if(autoplayEnabled)startAutoplay();},10000);}}
+window.addEventListener('resize',()=>{twoPageMode=window.innerWidth>=768;renderCurrent();resetZoom();});
 
-function updateIndicator(){ pageIndicator.textContent = `${currentPage} / ${totalPages}`; }
+// --- Zoom & Pan ---
+let zoomLevel=1,panX=0,panY=0,isDragging=false,lastX=0,lastY=0;
+let isPinching=false,pinchStartDist=0,pinchStartZoom=1,pinchCenter={x:0,y:0};
+function applyTransform(){spread.style.transformOrigin="0 0";spread.style.transform=`translate(${panX}px,${panY}px) scale(${zoomLevel})`;}
+function resetZoom(){zoomLevel=1;panX=0;panY=0;spread.style.transform="";spread.style.transformOrigin="center center";}
 
-// --- Navigation ---
-function nextPage(){ 
-  if(!canTurnPage()) return; 
-  currentPage += (twoPageMode?2:1); 
-  if(currentPage > totalPages) currentPage = 1; 
-  renderCurrent(); 
-}
-function prevPage(){ 
-  if(!canTurnPage()) return; 
-  currentPage -= (twoPageMode?2:1); 
-  if(currentPage < 1) {
-    currentPage = (twoPageMode ? (totalPages % 2 == 0 ? totalPages-1 : totalPages) : totalPages); 
+// PC: scroll zoom
+canvasWrap.addEventListener('wheel',e=>{
+  if(e.ctrlKey||!twoPageMode){
+    e.preventDefault();
+    let rect=canvasWrap.getBoundingClientRect(),cx=e.clientX-rect.left,cy=e.clientY-rect.top;
+    let oldZoom=zoomLevel,delta=e.deltaY<0?0.1:-0.1;
+    zoomLevel=Math.min(Math.max(zoomLevel+delta,1),4);
+    panX=cx-(cx-panX)*(zoomLevel/oldZoom);
+    panY=cy-(cy-panY)*(zoomLevel/oldZoom);
+    if(zoomLevel===1)resetZoom();else applyTransform();
   }
-  renderCurrent(); 
-}
-function gotoPage(n){ 
-  if(!canTurnPage()) return; 
-  if(n<1) n=1; if(n>totalPages) n=totalPages; 
-  currentPage=n; 
-  renderCurrent(); 
-}
+},{passive:false});
 
-// --- Autoplay ---
-function startAutoplay(){ stopAutoplay(); if(!autoplayEnabled) return; autoplayTimer = setInterval(()=> nextPage(), autoplayInterval); }
-function stopAutoplay(){ if(autoplayTimer){ clearInterval(autoplayTimer); autoplayTimer=null; } }
+// PC: pan
+spread.addEventListener('mousedown',e=>{if(zoomLevel<=1)return;isDragging=true;lastX=e.clientX;lastY=e.clientY;spread.style.cursor="grabbing";});
+window.addEventListener('mouseup',()=>{isDragging=false;spread.style.cursor="default";});
+window.addEventListener('mousemove',e=>{if(isDragging){panX+=e.clientX-lastX;panY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;applyTransform();}});
 
-btnNext.addEventListener('click', ()=>{ if (canTurnPage()) { nextPage(); pauseTemporarily(); } });
-btnPrev.addEventListener('click', ()=>{ if (canTurnPage()) { prevPage(); pauseTemporarily(); } });
-btnPlayPause.addEventListener('click', ()=>{ autoplayEnabled=!autoplayEnabled; btnPlayPause.textContent = autoplayEnabled ? 'Pause':'Play'; if(autoplayEnabled) startAutoplay(); else stopAutoplay(); });
-btnFirst.addEventListener('click', ()=>{ if (canTurnPage()) { gotoPage(1); pauseTemporarily(); } });
-btnLast.addEventListener('click', ()=>{ if (canTurnPage()) { gotoPage(totalPages); pauseTemporarily(); } });
+// Mobile: pinch zoom + pan
+canvasWrap.addEventListener('touchstart',e=>{
+  if(e.touches.length===2){isPinching=true;const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;
+    pinchStartDist=Math.sqrt(dx*dx+dy*dy);pinchStartZoom=zoomLevel;
+    let rect=canvasWrap.getBoundingClientRect();
+    pinchCenter.x=(e.touches[0].clientX+e.touches[1].clientX)/2-rect.left;
+    pinchCenter.y=(e.touches[0].clientY+e.touches[1].clientY)/2-rect.top;}
+},{passive:true});
+canvasWrap.addEventListener('touchmove',e=>{
+  if(isPinching&&e.touches.length===2){e.preventDefault();
+    const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY,dist=Math.sqrt(dx*dx+dy*dy);
+    let oldZoom=zoomLevel;zoomLevel=Math.min(Math.max(pinchStartZoom*(dist/pinchStartDist),1),4);
+    panX=pinchCenter.x-(pinchCenter.x-panX)*(zoomLevel/oldZoom);
+    panY=pinchCenter.y-(pinchCenter.y-panY)*(zoomLevel/oldZoom);
+    if(zoomLevel===1)resetZoom();else applyTransform();
+  } else if(e.touches.length===1&&zoomLevel>1){e.preventDefault();const t=e.touches[0];if(!lastX||!lastY){lastX=t.clientX;lastY=t.clientY;return;}
+    panX+=t.clientX-lastX;panY+=t.clientY-lastY;lastX=t.clientX;lastY=t.clientY;applyTransform();}
+},{passive:false});
+canvasWrap.addEventListener('touchend',e=>{if(isPinching&&e.touches.length<2)isPinching=false;lastX=lastY=0;},{passive:true});
 
-let resumeTimeout=null;
-function pauseTemporarily(){ if(autoplayEnabled){ stopAutoplay(); if(resumeTimeout) clearTimeout(resumeTimeout); resumeTimeout=setTimeout(()=>{if(autoplayEnabled) startAutoplay();},10000); } }
+// Double click / tap reset
+canvasWrap.addEventListener('dblclick',resetZoom);
+let lastTap=0;canvasWrap.addEventListener('touchend',function(e){const now=Date.now();
+  if(e.touches.length===0&&e.changedTouches.length===1&&zoomLevel===1){if(now-lastTap<300){resetZoom();e.preventDefault();}lastTap=now;}else{lastTap=0;}},{passive:true});
 
-window.addEventListener('resize', ()=> { twoPageMode = window.innerWidth>=768; renderCurrent(); resetZoom(); });
-
-// --- Vuốt lật trang (mobile) ---
+// Swipe turn page
 let touchStartX=0;
-canvasWrap.addEventListener('touchstart', e=>{
-  if(e.touches.length===1 && canTurnPage()){ 
-    touchStartX = e.touches[0].clientX; 
-    pauseTemporarily(); 
-  }
-}, {passive:true});
-canvasWrap.addEventListener('touchend', e=>{
-  if(!canTurnPage()) return; 
-  if(!e.changedTouches) return;
-  let dx = e.changedTouches[0].clientX - touchStartX;
-  if(Math.abs(dx) > 30){ if(dx < 0) nextPage(); else prevPage(); }
-}, {passive:true});
-
-// --- PC: scroll zoom ---
-canvasWrap.addEventListener('wheel', e => {
-  if (e.ctrlKey || !twoPageMode) {
-    e.preventDefault();
-    let rect = canvasWrap.getBoundingClientRect();
-    let cx = e.clientX - rect.left;
-    let cy = e.clientY - rect.top;
-
-    let oldZoom = zoomLevel;
-    let delta = e.deltaY < 0 ? 0.1 : -0.1;
-    zoomLevel = Math.min(Math.max(zoomLevel + delta, 1), 4);
-
-    panX = cx - (cx - panX) * (zoomLevel / oldZoom);
-    panY = cy - (cy - panY) * (zoomLevel / oldZoom);
-
-    if (zoomLevel === 1) resetZoom();
-    else applyTransform();
-  }
-}, { passive: false });
-
-// --- PC: pan ---
-spread.addEventListener('mousedown', e => {
-  if (zoomLevel <= 1) return;
-  isDragging = true;
-  lastX = e.clientX; lastY = e.clientY;
-  spread.style.cursor = "grabbing";
-});
-window.addEventListener('mouseup', () => {
-  isDragging = false; spread.style.cursor = "default";
-});
-window.addEventListener('mousemove', e => {
-  if (isDragging) {
-    panX += e.clientX - lastX;
-    panY += e.clientY - lastY;
-    lastX = e.clientX; lastY = e.clientY;
-    applyTransform();
-  }
-});
-
-// --- Mobile: pinch zoom ---
-canvasWrap.addEventListener('touchstart', e => {
-  if (e.touches.length === 2) {
-    isPinching = true;
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    pinchStartDist = Math.sqrt(dx*dx + dy*dy);
-    pinchStartZoom = zoomLevel;
-
-    let rect = canvasWrap.getBoundingClientRect();
-    pinchCenter.x = (e.touches[0].clientX + e.touches[1].clientX)/2 - rect.left;
-    pinchCenter.y = (e.touches[0].clientY + e.touches[1].clientY)/2 - rect.top;
-  }
-}, { passive: true });
-
-canvasWrap.addEventListener('touchmove', e => {
-  if (isPinching && e.touches.length === 2) {
-    e.preventDefault();
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-
-    let oldZoom = zoomLevel;
-    zoomLevel = Math.min(Math.max(pinchStartZoom * (dist / pinchStartDist), 1), 4);
-
-    panX = pinchCenter.x - (pinchCenter.x - panX) * (zoomLevel / oldZoom);
-    panY = pinchCenter.y - (pinchCenter.y - panY) * (zoomLevel / oldZoom);
-
-    if (zoomLevel === 1) resetZoom();
-    else applyTransform();
-  } 
-  else if (e.touches.length === 1 && zoomLevel > 1) {
-    e.preventDefault();
-    const t = e.touches[0];
-    if (!lastX || !lastY) { lastX = t.clientX; lastY = t.clientY; return; }
-    panX += t.clientX - lastX;
-    panY += t.clientY - lastY;
-    lastX = t.clientX; lastY = t.clientY;
-    applyTransform();
-  }
-}, { passive: false });
-
-canvasWrap.addEventListener('touchend', e => {
-  if (isPinching && e.touches.length < 2) {
-    isPinching = false;
-  }
-  lastX = lastY = 0;
-}, { passive: true });
-
-// --- Double-click PC reset ---
-canvasWrap.addEventListener('dblclick', resetZoom);
-
-// --- Double-tap mobile reset ---
-let lastTap = 0;
-canvasWrap.addEventListener('touchend', function(e){
-  const now = Date.now();
-  if (e.touches.length === 0 && e.changedTouches.length === 1) {
-    if (now - lastTap < 300) { resetZoom(); e.preventDefault(); }
-    lastTap = now;
-  } else {
-    lastTap = 0;
-  }
-}, { passive: true });
+canvasWrap.addEventListener('touchstart',e=>{if(e.touches.length===1&&canTurnPage()){touchStartX=e.touches[0].clientX;pauseTemporarily();}},{passive:true});
+canvasWrap.addEventListener('touchend',e=>{if(!canTurnPage())return;if(!e.changedTouches)return;let dx=e.changedTouches[0].clientX-touchStartX;if(Math.abs(dx)>30){if(dx<0)nextPage();else prevPage();}},{passive:true});
 
 // start
 loadAllPdfs();
