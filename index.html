@@ -102,6 +102,25 @@ let currentPage = 1;
 let twoPageMode = window.innerWidth >= 768;
 let autoplayTimer = null, autoplayEnabled = true;
 
+// --- Zoom & Pan state ---
+let zoomLevel = 1, panX = 0, panY = 0;
+let isDragging = false, lastX = 0, lastY = 0;
+let isPinching = false, pinchStartDist = 0, pinchStartZoom = 1;
+let pinchCenter = {x:0,y:0};
+
+// reset transform
+function applyTransform() {
+  spread.style.transformOrigin = "0 0"; 
+  spread.style.transform = `translate(${panX}px,${panY}px) scale(${zoomLevel})`;
+}
+function resetZoom() {
+  zoomLevel = 1;
+  panX = 0;
+  panY = 0;
+  spread.style.transform = "none"; // xoá toàn bộ transform
+}
+function canTurnPage() { return zoomLevel === 1; }
+
 // --- load nhiều file PDF ---
 async function loadAllPdfs(){
   let cumulative = 0;
@@ -155,6 +174,7 @@ async function renderPage(globalPage, canvas, ctx){
 }
 
 async function renderCurrent(){
+  if (zoomLevel === 1) resetZoom(); // đảm bảo khi zoom = 1 thì reset
   if(twoPageMode){
     canvasRight.style.display = "block";
     await renderPage(currentPage, canvasLeft, ctxLeft);
@@ -167,32 +187,6 @@ async function renderCurrent(){
 }
 
 function updateIndicator(){ pageIndicator.textContent = `${currentPage} / ${totalPages}`; }
-
-function startAutoplay(){ stopAutoplay(); if(!autoplayEnabled) return; autoplayTimer = setInterval(()=> nextPage(), autoplayInterval); }
-function stopAutoplay(){ if(autoplayTimer){ clearInterval(autoplayTimer); autoplayTimer=null; } }
-
-btnPlayPause.addEventListener('click', ()=>{ autoplayEnabled=!autoplayEnabled; btnPlayPause.textContent = autoplayEnabled ? 'Pause':'Play'; if(autoplayEnabled) startAutoplay(); else stopAutoplay(); });
-
-let resumeTimeout=null;
-function pauseTemporarily(){ if(autoplayEnabled){ stopAutoplay(); if(resumeTimeout) clearTimeout(resumeTimeout); resumeTimeout=setTimeout(()=>{if(autoplayEnabled) startAutoplay();},10000); } }
-
-window.addEventListener('resize', ()=> { twoPageMode = window.innerWidth>=768; renderCurrent(); resetZoom(); });
-
-// --- Zoom & Pan + Page Navigation ---
-let zoomLevel = 1, panX = 0, panY = 0;
-let isDragging = false, lastX = 0, lastY = 0;
-let isPinching = false, pinchStartDist = 0, pinchStartZoom = 1;
-let pinchCenter = {x:0,y:0};
-
-// reset transform
-function applyTransform() {
-  spread.style.transformOrigin = "0 0"; 
-  spread.style.transform = `translate(${panX}px,${panY}px) scale(${zoomLevel})`;
-}
-function resetZoom() {
-  zoomLevel = 1; panX = 0; panY = 0; applyTransform();
-}
-function canTurnPage() { return zoomLevel === 1; }
 
 // --- Navigation ---
 function nextPage(){ 
@@ -216,13 +210,22 @@ function gotoPage(n){
   renderCurrent(); 
 }
 
-// --- Buttons ---
+// --- Autoplay ---
+function startAutoplay(){ stopAutoplay(); if(!autoplayEnabled) return; autoplayTimer = setInterval(()=> nextPage(), autoplayInterval); }
+function stopAutoplay(){ if(autoplayTimer){ clearInterval(autoplayTimer); autoplayTimer=null; } }
+
 btnNext.addEventListener('click', ()=>{ if (canTurnPage()) { nextPage(); pauseTemporarily(); } });
 btnPrev.addEventListener('click', ()=>{ if (canTurnPage()) { prevPage(); pauseTemporarily(); } });
+btnPlayPause.addEventListener('click', ()=>{ autoplayEnabled=!autoplayEnabled; btnPlayPause.textContent = autoplayEnabled ? 'Pause':'Play'; if(autoplayEnabled) startAutoplay(); else stopAutoplay(); });
 btnFirst.addEventListener('click', ()=>{ if (canTurnPage()) { gotoPage(1); pauseTemporarily(); } });
 btnLast.addEventListener('click', ()=>{ if (canTurnPage()) { gotoPage(totalPages); pauseTemporarily(); } });
 
-// --- Swipe (mobile) ---
+let resumeTimeout=null;
+function pauseTemporarily(){ if(autoplayEnabled){ stopAutoplay(); if(resumeTimeout) clearTimeout(resumeTimeout); resumeTimeout=setTimeout(()=>{if(autoplayEnabled) startAutoplay();},10000); } }
+
+window.addEventListener('resize', ()=> { twoPageMode = window.innerWidth>=768; renderCurrent(); resetZoom(); });
+
+// --- Vuốt lật trang (mobile) ---
 let touchStartX=0;
 canvasWrap.addEventListener('touchstart', e=>{
   if(e.touches.length===1 && canTurnPage()){ 
@@ -249,7 +252,6 @@ canvasWrap.addEventListener('wheel', e => {
     let delta = e.deltaY < 0 ? 0.1 : -0.1;
     zoomLevel = Math.min(Math.max(zoomLevel + delta, 1), 4);
 
-    // giữ tâm zoom
     panX = cx - (cx - panX) * (zoomLevel / oldZoom);
     panY = cy - (cy - panY) * (zoomLevel / oldZoom);
 
@@ -286,7 +288,6 @@ canvasWrap.addEventListener('touchstart', e => {
     pinchStartDist = Math.sqrt(dx*dx + dy*dy);
     pinchStartZoom = zoomLevel;
 
-    // tâm pinch
     let rect = canvasWrap.getBoundingClientRect();
     pinchCenter.x = (e.touches[0].clientX + e.touches[1].clientX)/2 - rect.left;
     pinchCenter.y = (e.touches[0].clientY + e.touches[1].clientY)/2 - rect.top;
@@ -303,7 +304,6 @@ canvasWrap.addEventListener('touchmove', e => {
     let oldZoom = zoomLevel;
     zoomLevel = Math.min(Math.max(pinchStartZoom * (dist / pinchStartDist), 1), 4);
 
-    // giữ tâm pinch
     panX = pinchCenter.x - (pinchCenter.x - panX) * (zoomLevel / oldZoom);
     panY = pinchCenter.y - (pinchCenter.y - panY) * (zoomLevel / oldZoom);
 
@@ -335,7 +335,7 @@ canvasWrap.addEventListener('dblclick', resetZoom);
 let lastTap = 0;
 canvasWrap.addEventListener('touchend', function(e){
   const now = Date.now();
-  if (e.touches.length === 0 && e.changedTouches.length === 1 && zoomLevel === 1) {
+  if (e.touches.length === 0 && e.changedTouches.length === 1) {
     if (now - lastTap < 300) { resetZoom(); e.preventDefault(); }
     lastTap = now;
   } else {
