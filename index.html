@@ -25,7 +25,7 @@
   .loading-dots::after{content:"";animation:dots 1.5s steps(3,end) infinite;}
   @keyframes dots{0%{content:"";}33%{content:".";}66%{content:"..";}100%{content:"...";}}
 
-  /* Mobile navigation (fixed, không bị zoom ảnh hưởng) */
+  /* --- Mobile navigation --- */
   @media (max-width: 767px) {
     .mobile-nav {
       position: fixed;
@@ -34,12 +34,12 @@
       transform: translateX(-50%);
       display: flex;
       gap: 20px;
-      z-index: 200; /* cao hơn canvas */
+      z-index: 9999;
     }
     .mobile-btn {
       padding: 10px 18px;
       border-radius: 6px;
-      background: rgba(255,255,255,0.15);
+      background: rgba(0,0,0,0.6);
       border: 1px solid rgba(255,255,255,0.25);
       color: #fff;
       font-size: 16px;
@@ -72,7 +72,7 @@
     </div>
   </div>
 
-  <!-- Mobile navigation đặt ngoài canvasWrap để không bị zoom -->
+  <!-- Mobile buttons đặt ngoài viewer -->
   <div class="mobile-nav" id="mobileNav" style="display:none">
     <button id="btnPrevMobile" class="mobile-btn">◀ Trang trước</button>
     <button id="btnNextMobile" class="mobile-btn">Trang sau ▶</button>
@@ -91,18 +91,20 @@ const btnPrev=document.getElementById('btnPrev'),btnNext=document.getElementById
 const btnPlayPause=document.getElementById('btnPlayPause'),btnFirst=document.getElementById('btnFirst'),btnLast=document.getElementById('btnLast');
 const canvasWrap=document.getElementById('canvasWrap'),spread=document.getElementById('spread');
 const loadingOverlay=document.getElementById('loadingOverlay');
-
-// Mobile buttons
-const mobileNav = document.getElementById('mobileNav');
-const btnPrevMobile = document.getElementById('btnPrevMobile');
-const btnNextMobile = document.getElementById('btnNextMobile');
+const mobileNav=document.getElementById('mobileNav');
+const btnPrevMobile=document.getElementById('btnPrevMobile');
+const btnNextMobile=document.getElementById('btnNextMobile');
 
 let pdfDocs=[],partPageCounts=[],totalPages=0,currentPage=1;
 let twoPageMode=window.innerWidth>=768;
 let autoplayTimer=null,autoplayEnabled=true;
 
-// Zoom & Pan
+// --- Zoom & Pan ---
 let zoomLevel=1,panX=0,panY=0,isDragging=false,lastX=0,lastY=0;
+let isPinching=false,pinchStartDist=0,pinchStartZoom=1,pinchCenter={x:0,y:0};
+
+function applyTransform(){spread.style.transformOrigin="0 0";spread.style.transform=`translate(${panX}px,${panY}px) scale(${zoomLevel})`;}
+function resetZoom(){zoomLevel=1;panX=0;panY=0;spread.style.transform="";spread.style.transformOrigin="center center";}
 
 async function loadAllPdfs(){
   let cumulative=0;
@@ -142,15 +144,13 @@ async function renderPage(globalPage,canvas,ctx){
 async function renderCurrent(){
   if(twoPageMode){canvasRight.style.display="block"; await renderPage(currentPage,canvasLeft,ctxLeft); await renderPage(currentPage+1,canvasRight,ctxRight);}
   else{canvasRight.style.display="none"; await renderPage(currentPage,canvasLeft,ctxLeft);}
-  resetZoom(); // đảm bảo luôn về mặc định sau khi render
-  updateIndicator();
-  updateMobileNav();
+  updateIndicator(); updateMobileNav();
 }
 function updateIndicator(){pageIndicator.textContent=`${currentPage} / ${totalPages}`;}
 function canTurnPage(){return zoomLevel===1;}
-function gotoPage(n){if(n<1)n=1;if(n>totalPages)n=totalPages; currentPage=n;renderCurrent();}
-function nextPage(){currentPage+=(twoPageMode?2:1); if(currentPage>totalPages)currentPage=1; renderCurrent();}
-function prevPage(){currentPage-=(twoPageMode?2:1); if(currentPage<1) currentPage=(twoPageMode?(totalPages%2==0?totalPages-1:totalPages):totalPages); renderCurrent();}
+function gotoPage(n){resetZoom(); if(n<1)n=1;if(n>totalPages)n=totalPages; currentPage=n;renderCurrent();}
+function nextPage(){resetZoom(); currentPage+=(twoPageMode?2:1); if(currentPage>totalPages)currentPage=1; renderCurrent();}
+function prevPage(){resetZoom(); currentPage-=(twoPageMode?2:1); if(currentPage<1) currentPage=(twoPageMode?(totalPages%2==0?totalPages-1:totalPages):totalPages); renderCurrent();}
 function startAutoplay(){stopAutoplay(); if(!autoplayEnabled)return; autoplayTimer=setInterval(()=>nextPage(),autoplayInterval);}
 function stopAutoplay(){if(autoplayTimer){clearInterval(autoplayTimer);autoplayTimer=null;}}
 btnNext.addEventListener('click',()=>{nextPage();pauseTemporarily();});
@@ -160,28 +160,21 @@ btnFirst.addEventListener('click',()=>{gotoPage(1);pauseTemporarily();});
 btnLast.addEventListener('click',()=>{gotoPage(totalPages);pauseTemporarily();});
 let resumeTimeout=null; function pauseTemporarily(){if(autoplayEnabled){stopAutoplay();if(resumeTimeout)clearTimeout(resumeTimeout);resumeTimeout=setTimeout(()=>{if(autoplayEnabled)startAutoplay();},10000);}}
 
-// --- Mobile navigation ---
-function updateMobileNav() {
-  if (window.innerWidth < 768) {
-    mobileNav.style.display = "flex";
-    btnPrevMobile.style.display = currentPage > 1 ? "block" : "none";
-    btnNextMobile.style.display = currentPage < totalPages ? "block" : "none";
+// --- Mobile buttons ---
+function updateMobileNav(){
+  if(window.innerWidth<768){
+    mobileNav.style.display="flex";
+    btnPrevMobile.style.display=currentPage>1?"block":"none";
+    btnNextMobile.style.display=currentPage<totalPages?"block":"none";
   } else {
-    mobileNav.style.display = "none";
+    mobileNav.style.display="none";
   }
 }
-btnPrevMobile.addEventListener('click', () => {
-  if (currentPage > 1) { currentPage--; renderCurrent(); }
-});
-btnNextMobile.addEventListener('click', () => {
-  if (currentPage < totalPages) { currentPage++; renderCurrent(); }
-});
+btnPrevMobile.addEventListener('click',()=>{if(currentPage>1){resetZoom();currentPage--;renderCurrent();}});
+btnNextMobile.addEventListener('click',()=>{if(currentPage<totalPages){resetZoom();currentPage++;renderCurrent();}});
+window.addEventListener('resize',()=>{twoPageMode=window.innerWidth>=768;renderCurrent();resetZoom();updateMobileNav();});
 
-// --- Zoom & Pan ---
-function applyTransform(){spread.style.transformOrigin="0 0";spread.style.transform=`translate(${panX}px,${panY}px) scale(${zoomLevel})`;}
-function resetZoom(){zoomLevel=1;panX=0;panY=0;spread.style.transform="";spread.style.transformOrigin="center center";}
-
-// PC zoom
+// PC zoom + pan (giữ nguyên)
 canvasWrap.addEventListener('wheel',e=>{
   if(e.ctrlKey||!twoPageMode){
     e.preventDefault();
@@ -193,15 +186,11 @@ canvasWrap.addEventListener('wheel',e=>{
     if(zoomLevel===1)resetZoom();else applyTransform();
   }
 },{passive:false});
-
-// PC pan
 spread.addEventListener('mousedown',e=>{if(zoomLevel<=1)return;isDragging=true;lastX=e.clientX;lastY=e.clientY;spread.style.cursor="grabbing";});
 window.addEventListener('mouseup',()=>{isDragging=false;spread.style.cursor="default";});
 window.addEventListener('mousemove',e=>{if(isDragging){panX+=e.clientX-lastX;panY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;applyTransform();}});
 
-// start
 loadAllPdfs();
-window.addEventListener('resize',()=>{twoPageMode=window.innerWidth>=768;renderCurrent();updateMobileNav();});
 </script>
 </body>
 </html>
