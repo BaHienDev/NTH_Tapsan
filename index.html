@@ -198,60 +198,101 @@ canvasWrap.addEventListener('touchend', e=>{
   if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); }
 }, {passive:true});
 
-// --- Zoom & Pan ---
+// --- Zoom & Pan + Page Navigation ---
 let zoomLevel = 1, panX = 0, panY = 0;
 let isDragging = false, lastX = 0, lastY = 0;
 let isPinching = false, pinchStartDist = 0, pinchStartZoom = 1;
+let pinchCenter = {x:0,y:0};
 
+// reset transform
 function applyTransform() {
+  spread.style.transformOrigin = "0 0"; 
   spread.style.transform = `translate(${panX}px,${panY}px) scale(${zoomLevel})`;
 }
-
 function resetZoom() {
-  zoomLevel = 1;
-  panX = 0;
-  panY = 0;
-  applyTransform();
+  zoomLevel = 1; panX = 0; panY = 0; applyTransform();
+}
+function canTurnPage() { return zoomLevel === 1; }
+
+// --- Navigation Functions ---
+function nextPage(){ 
+  if(!canTurnPage()) return; 
+  currentPage += (twoPageMode?2:1); 
+  if(currentPage > totalPages) currentPage = 1; 
+  renderCurrent(); 
+}
+function prevPage(){ 
+  if(!canTurnPage()) return; 
+  currentPage -= (twoPageMode?2:1); 
+  if(currentPage < 1) {
+    currentPage = (twoPageMode ? (totalPages % 2 == 0 ? totalPages-1 : totalPages) : totalPages); 
+  }
+  renderCurrent(); 
+}
+function gotoPage(n){ 
+  if(!canTurnPage()) return; 
+  if(n<1) n=1; if(n>totalPages) n=totalPages; 
+  currentPage=n; 
+  renderCurrent(); 
 }
 
-function canTurnPage() {
-  return zoomLevel === 1;
-}
+// --- Button events (PC & mobile chung) ---
+btnNext.addEventListener('click', ()=>{ if (canTurnPage()) { nextPage(); pauseTemporarily(); } });
+btnPrev.addEventListener('click', ()=>{ if (canTurnPage()) { prevPage(); pauseTemporarily(); } });
+btnFirst.addEventListener('click', ()=>{ if (canTurnPage()) { gotoPage(1); pauseTemporarily(); } });
+btnLast.addEventListener('click', ()=>{ if (canTurnPage()) { gotoPage(totalPages); pauseTemporarily(); } });
+
+// --- Vuốt lật trang (mobile) ---
+let touchStartX=0;
+canvasWrap.addEventListener('touchstart', e=>{
+  if(e.touches.length===1 && canTurnPage()){ 
+    touchStartX = e.touches[0].clientX; 
+    pauseTemporarily(); 
+  }
+}, {passive:true});
+canvasWrap.addEventListener('touchend', e=>{
+  if(!canTurnPage()) return; 
+  if(!e.changedTouches) return;
+  let dx = e.changedTouches[0].clientX - touchStartX;
+  if(Math.abs(dx) > 30){ if(dx < 0) nextPage(); else prevPage(); }
+}, {passive:true});
 
 // --- PC: scroll zoom ---
 canvasWrap.addEventListener('wheel', e => {
   if (e.ctrlKey || !twoPageMode) {
     e.preventDefault();
+    let rect = canvasWrap.getBoundingClientRect();
+    let cx = e.clientX - rect.left;
+    let cy = e.clientY - rect.top;
+
+    let oldZoom = zoomLevel;
     let delta = e.deltaY < 0 ? 0.1 : -0.1;
     zoomLevel = Math.min(Math.max(zoomLevel + delta, 1), 4);
 
-    if (zoomLevel === 1) {
-      resetZoom(); // luôn về giữa
-    } else {
-      panX = 0; panY = 0; // giữ ở tâm
-      applyTransform();
-    }
+    // giữ tâm zoom
+    panX = cx - (cx - panX) * (zoomLevel / oldZoom);
+    panY = cy - (cy - panY) * (zoomLevel / oldZoom);
+
+    if (zoomLevel === 1) resetZoom();
+    else applyTransform();
   }
 }, { passive: false });
 
-// --- PC: pan khi zoom ---
+// --- PC: pan ---
 spread.addEventListener('mousedown', e => {
   if (zoomLevel <= 1) return;
-  isDragging = true; 
-  lastX = e.clientX; 
-  lastY = e.clientY; 
+  isDragging = true;
+  lastX = e.clientX; lastY = e.clientY;
   spread.style.cursor = "grabbing";
 });
-window.addEventListener('mouseup', () => { 
-  isDragging = false; 
-  spread.style.cursor = "default"; 
+window.addEventListener('mouseup', () => {
+  isDragging = false; spread.style.cursor = "default";
 });
 window.addEventListener('mousemove', e => {
   if (isDragging) {
-    panX += e.clientX - lastX; 
-    panY += e.clientY - lastY; 
-    lastX = e.clientX; 
-    lastY = e.clientY; 
+    panX += e.clientX - lastX;
+    panY += e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
     applyTransform();
   }
 });
@@ -264,6 +305,11 @@ canvasWrap.addEventListener('touchstart', e => {
     const dy = e.touches[0].clientY - e.touches[1].clientY;
     pinchStartDist = Math.sqrt(dx*dx + dy*dy);
     pinchStartZoom = zoomLevel;
+
+    // tâm pinch
+    let rect = canvasWrap.getBoundingClientRect();
+    pinchCenter.x = (e.touches[0].clientX + e.touches[1].clientX)/2 - rect.left;
+    pinchCenter.y = (e.touches[0].clientY + e.touches[1].clientY)/2 - rect.top;
   }
 }, { passive: true });
 
@@ -273,23 +319,24 @@ canvasWrap.addEventListener('touchmove', e => {
     const dx = e.touches[0].clientX - e.touches[1].clientX;
     const dy = e.touches[0].clientY - e.touches[1].clientY;
     const dist = Math.sqrt(dx*dx + dy*dy);
+
+    let oldZoom = zoomLevel;
     zoomLevel = Math.min(Math.max(pinchStartZoom * (dist / pinchStartDist), 1), 4);
 
-    if (zoomLevel === 1) {
-      resetZoom(); // về giữa khi thu nhỏ hết
-    } else {
-      panX = 0; panY = 0; // giữ ở tâm khi zoom
-      applyTransform();
-    }
+    // giữ tâm pinch
+    panX = pinchCenter.x - (pinchCenter.x - panX) * (zoomLevel / oldZoom);
+    panY = pinchCenter.y - (pinchCenter.y - panY) * (zoomLevel / oldZoom);
+
+    if (zoomLevel === 1) resetZoom();
+    else applyTransform();
   } 
   else if (e.touches.length === 1 && zoomLevel > 1) {
     e.preventDefault();
     const t = e.touches[0];
     if (!lastX || !lastY) { lastX = t.clientX; lastY = t.clientY; return; }
-    panX += t.clientX - lastX; 
-    panY += t.clientY - lastY; 
-    lastX = t.clientX; 
-    lastY = t.clientY; 
+    panX += t.clientX - lastX;
+    panY += t.clientY - lastY;
+    lastX = t.clientX; lastY = t.clientY;
     applyTransform();
   }
 }, { passive: false });
@@ -309,16 +356,12 @@ let lastTap = 0;
 canvasWrap.addEventListener('touchend', function(e){
   const now = Date.now();
   if (e.touches.length === 0 && e.changedTouches.length === 1 && zoomLevel === 1) {
-    if (now - lastTap < 300) { 
-      resetZoom(); 
-      e.preventDefault(); 
-    }
+    if (now - lastTap < 300) { resetZoom(); e.preventDefault(); }
     lastTap = now;
   } else {
     lastTap = 0;
   }
 }, { passive: true });
-
 
 // start
 loadAllPdfs();
