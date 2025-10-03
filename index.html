@@ -335,6 +335,7 @@ canvasWrap.addEventListener('touchend', e=>{
    However your previous requirement: "mobile không còn cho phép slide để chuyển trang" — 
    if you want to fully disable swipe, comment out / remove below block.
 */
+/*
 let touchStartX = 0;
 canvasWrap.addEventListener('touchstart', e=>{
   if(e.touches.length === 1 && canTurnPage()){
@@ -350,7 +351,7 @@ canvasWrap.addEventListener('touchend', e=>{
     if(dx < 0) nextPage(); else prevPage();
   }
 }, {passive:true});
-
+*/
 /* Start */
 loadAllPdfs();
 
