@@ -168,35 +168,15 @@ async function renderCurrent(){
 
 function updateIndicator(){ pageIndicator.textContent = `${currentPage} / ${totalPages}`; }
 
-function gotoPage(n){ if(n<1) n=1; if(n>totalPages) n=totalPages; currentPage=n; renderCurrent(); }
-function nextPage(){ currentPage += (twoPageMode?2:1); if(currentPage>totalPages) currentPage=1; renderCurrent(); }
-function prevPage(){ currentPage -= (twoPageMode?2:1); if(currentPage<1) currentPage=(twoPageMode?(totalPages%2==0?totalPages-1:totalPages):totalPages); renderCurrent(); }
-
 function startAutoplay(){ stopAutoplay(); if(!autoplayEnabled) return; autoplayTimer = setInterval(()=> nextPage(), autoplayInterval); }
 function stopAutoplay(){ if(autoplayTimer){ clearInterval(autoplayTimer); autoplayTimer=null; } }
 
-btnNext.addEventListener('click', ()=>{ nextPage(); pauseTemporarily(); });
-btnPrev.addEventListener('click', ()=>{ prevPage(); pauseTemporarily(); });
 btnPlayPause.addEventListener('click', ()=>{ autoplayEnabled=!autoplayEnabled; btnPlayPause.textContent = autoplayEnabled ? 'Pause':'Play'; if(autoplayEnabled) startAutoplay(); else stopAutoplay(); });
-btnFirst.addEventListener('click', ()=>{ gotoPage(1); pauseTemporarily(); });
-btnLast.addEventListener('click', ()=>{ gotoPage(totalPages); pauseTemporarily(); });
 
 let resumeTimeout=null;
 function pauseTemporarily(){ if(autoplayEnabled){ stopAutoplay(); if(resumeTimeout) clearTimeout(resumeTimeout); resumeTimeout=setTimeout(()=>{if(autoplayEnabled) startAutoplay();},10000); } }
 
 window.addEventListener('resize', ()=> { twoPageMode = window.innerWidth>=768; renderCurrent(); resetZoom(); });
-
-// --- vuốt lật trang mobile ---
-let touchStartX=0;
-canvasWrap.addEventListener('touchstart', e=>{
-  if(e.touches.length===1 && zoomLevel===1){ touchStartX=e.touches[0].clientX; pauseTemporarily(); }
-}, {passive:true});
-canvasWrap.addEventListener('touchend', e=>{
-  if(zoomLevel>1) return; // đang zoom thì không lật trang
-  if(!e.changedTouches) return;
-  let dx=e.changedTouches[0].clientX-touchStartX;
-  if(Math.abs(dx)>30){ if(dx<0) nextPage(); else prevPage(); }
-}, {passive:true});
 
 // --- Zoom & Pan + Page Navigation ---
 let zoomLevel = 1, panX = 0, panY = 0;
@@ -214,7 +194,7 @@ function resetZoom() {
 }
 function canTurnPage() { return zoomLevel === 1; }
 
-// --- Navigation Functions ---
+// --- Navigation ---
 function nextPage(){ 
   if(!canTurnPage()) return; 
   currentPage += (twoPageMode?2:1); 
@@ -236,13 +216,13 @@ function gotoPage(n){
   renderCurrent(); 
 }
 
-// --- Button events (PC & mobile chung) ---
+// --- Buttons ---
 btnNext.addEventListener('click', ()=>{ if (canTurnPage()) { nextPage(); pauseTemporarily(); } });
 btnPrev.addEventListener('click', ()=>{ if (canTurnPage()) { prevPage(); pauseTemporarily(); } });
 btnFirst.addEventListener('click', ()=>{ if (canTurnPage()) { gotoPage(1); pauseTemporarily(); } });
 btnLast.addEventListener('click', ()=>{ if (canTurnPage()) { gotoPage(totalPages); pauseTemporarily(); } });
 
-// --- Vuốt lật trang (mobile) ---
+// --- Swipe (mobile) ---
 let touchStartX=0;
 canvasWrap.addEventListener('touchstart', e=>{
   if(e.touches.length===1 && canTurnPage()){ 
